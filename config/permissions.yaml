@@ -1,0 +1,69 @@
+roles:
+  bastion:
+    allowed_commands:
+      - "uptime"
+      - "df -h"
+      - "free -h"
+      - "ps aux"
+      - "systemctl status *"
+      - "journalctl -u * --no-pager -n *"
+      - "docker ps"
+      - "docker logs *"
+      - "cat /var/log/*"
+      - "tail -n * /var/log/*"
+    allowed_paths_read:
+      - /var/log/
+      - /etc/
+      - /home/claude-agent/
+    allowed_paths_write: []
+
+  game-server:
+    allowed_commands:
+      - "uptime"
+      - "df -h"
+      - "free -h"
+      - "ps aux"
+      - "systemctl status *"
+      - "journalctl -u * --no-pager -n *"
+      - "docker ps *"
+      - "docker logs *"
+      - "docker inspect *"
+      - "docker stats --no-stream"
+      - "docker restart *"
+      - "systemctl restart *"
+    allowed_paths_read:
+      - /var/log/
+      - /etc/pterodactyl/
+      - /srv/pterodactyl/
+    allowed_paths_write: []
+
+  monitoring:
+    allowed_commands:
+      - "uptime"
+      - "df -h"
+      - "free -h"
+      - "docker ps *"
+      - "docker logs *"
+      - "docker compose -f /opt/monitoring/* ps"
+      - "docker compose -f /opt/monitoring/* logs *"
+      - "docker compose -f /opt/monitoring/* restart *"
+      - "systemctl status *"
+      - "journalctl -u * --no-pager -n *"
+    allowed_paths_read:
+      - /var/log/
+      - /opt/monitoring/
+    allowed_paths_write: []
+
+approval_required_patterns:
+  - "restart"
+  - "stop"
+  - "kill"
+  - "rm "
+  - "remove"
+  - "delete"
+  - "drop"
+  - "truncate"
+  - "write"
+  - "tee "
+  - ">"
+  - ">>"
