@@ -1,0 +1,29 @@
+servers:
+  localhost:
+    host: localhost
+    role: bastion
+    user: claude-agent
+    description: "Bastion server (this machine)"
+    ssh: false
+
+  gameserver-01:
+    host: 10.0.1.10
+    role: game-server
+    user: claude-agent
+    key_path: ~/.ssh/keys/gameserver-01_ed25519
+    description: "Primary Rust game server - Pterodactyl Wings node"
+    services:
+      - pterodactyl-wings
+      - docker
+
+  monitoring:
+    host: 10.0.1.20
+    role: monitoring
+    user: claude-agent
+    key_path: ~/.ssh/keys/monitoring_ed25519
+    description: "VictoriaMetrics + Grafana monitoring stack"
+    services:
+      - victoriametrics
+      - grafana
+      - vmagent
+    metrics_url: http://10.0.1.20:8428
