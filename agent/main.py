@@ -33,6 +33,21 @@ def _configure_logging(log_level: str) -> None:
     )
 
 
+def _asyncssh_available() -> bool:
+    """Check if asyncssh can be imported without crashing.
+
+    Uses a subprocess probe because asyncssh's cryptography backend
+    can cause an unrecoverable Rust panic if the C bindings are broken.
+    """
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, "-c", "import asyncssh"],
+        capture_output=True,
+        timeout=5,
+    )
+    return result.returncode == 0
+
+
 def _build_agent(config_path: str):
     """Build all agent components from config.
 
@@ -56,9 +71,16 @@ def _build_agent(config_path: str):
     # Build tool registry and register all tools
     registry = ToolRegistry(agent_cfg, inventory, audit)
     registry.register(RunLocalCommand())
-    registry.register(ReadFile())
+    registry.register(ReadFile(inventory))
     registry.register(ListServers(inventory))
     registry.register(GetServerStatus(inventory))
+
+    # Register SSH tools if asyncssh is available
+    if _asyncssh_available():
+        from agent.tools.remote import RunRemoteCommand
+        registry.register(RunRemoteCommand(inventory, agent_cfg.command_timeout))
+    else:
+        logger.warning("ssh_tools_unavailable", msg="SSH tools disabled (asyncssh not available)")
 
     # Build system prompt and UI
     system_prompt = build_system_prompt(inventory, registry)

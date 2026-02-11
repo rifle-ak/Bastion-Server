@@ -7,14 +7,17 @@ allowed_paths_read. Write operations are not implemented in this phase.
 from __future__ import annotations
 
 import asyncio
-import shlex
 from typing import Any
 
+from agent.inventory import Inventory
 from agent.tools.base import BaseTool, ToolResult
 
 
 class ReadFile(BaseTool):
     """Read a file's contents with an optional line limit."""
+
+    def __init__(self, inventory: Inventory) -> None:
+        self._inventory = inventory
 
     @property
     def name(self) -> str:
@@ -52,10 +55,7 @@ class ReadFile(BaseTool):
     async def execute(
         self, *, server: str, path: str, lines: int = 100, **kwargs: Any
     ) -> ToolResult:
-        """Read a file using head.
-
-        For now, only local (bastion) reads are supported. Remote reads
-        will be added in the SSH tools step.
+        """Read a file using head, locally or via SSH.
 
         Args:
             server: Server name.
@@ -65,14 +65,23 @@ class ReadFile(BaseTool):
         Returns:
             ToolResult with file contents or error.
         """
-        if server != "localhost":
-            return ToolResult(
-                error=f"Remote file reads not yet implemented (server: {server}). "
-                "SSH tools coming in build step 7.",
-                exit_code=1,
-            )
+        command = f"head -n {lines} {path}"
 
-        # Use head to limit output — no shell=True, args are split safely
+        if server == "localhost":
+            return await self._read_local(path, lines)
+
+        # Remote read via SSH (lazy import to avoid hard dep on asyncssh)
+        try:
+            server_info = self._inventory.get_server(server)
+        except KeyError as e:
+            return ToolResult(error=str(e), exit_code=1)
+
+        from agent.tools.remote import run_remote_command
+
+        return await run_remote_command(server_info, command)
+
+    async def _read_local(self, path: str, lines: int) -> ToolResult:
+        """Read a file locally using head."""
         args = ["head", "-n", str(lines), path]
 
         try:
