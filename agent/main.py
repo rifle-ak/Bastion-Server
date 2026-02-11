@@ -58,10 +58,13 @@ def _build_agent(config_path: str):
     from agent.inventory import Inventory
     from agent.prompts import build_system_prompt
     from agent.security.audit import AuditLogger
+    from agent.tools.docker_tools import DockerLogs, DockerPs
     from agent.tools.files import ReadFile
     from agent.tools.local import RunLocalCommand
+    from agent.tools.monitoring import QueryMetrics
     from agent.tools.registry import ToolRegistry
     from agent.tools.server_info import GetServerStatus, ListServers
+    from agent.tools.systemd import ServiceJournal, ServiceStatus
     from agent.ui.terminal import TerminalUI
 
     agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
@@ -74,6 +77,11 @@ def _build_agent(config_path: str):
     registry.register(ReadFile(inventory))
     registry.register(ListServers(inventory))
     registry.register(GetServerStatus(inventory))
+    registry.register(DockerPs(inventory))
+    registry.register(DockerLogs(inventory))
+    registry.register(ServiceStatus(inventory))
+    registry.register(ServiceJournal(inventory))
+    registry.register(QueryMetrics(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
