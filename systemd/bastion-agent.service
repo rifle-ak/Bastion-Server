@@ -1,0 +1,32 @@
+[Unit]
+Description=Bastion Agent - Infrastructure Management for Galaxy Gaming Host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=claude-agent
+Group=claude-agent
+WorkingDirectory=/opt/bastion-agent
+ExecStart=/opt/bastion-agent/venv/bin/bastion-agent run --config-dir /opt/bastion-agent/config
+Restart=on-failure
+RestartSec=10
+
+# Environment
+EnvironmentFile=-/etc/bastion-agent/env
+Environment=BASTION_AGENT_LOG_LEVEL=INFO
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/log/bastion-agent /opt/bastion-agent/logs
+PrivateTmp=yes
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bastion-agent
+
+[Install]
+WantedBy=multi-user.target
