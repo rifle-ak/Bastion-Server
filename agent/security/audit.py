@@ -6,42 +6,10 @@ timeouts — to a JSONL file for post-hoc review and compliance.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+from typing import Any
 
 import structlog
-
-
-def configure_audit_logger(log_path: str) -> structlog.BoundLogger:
-    """Create and configure a dedicated audit logger writing JSON to a file.
-
-    Args:
-        log_path: Path to the JSONL audit log file.
-
-    Returns:
-        A bound structlog logger for audit events.
-    """
-    path = Path(log_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Open the file in append mode for the file logger
-    log_file = open(path, "a", buffering=1)  # line-buffered  # noqa: SIM115
-
-    # Build a logger factory that writes to the audit file
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.JSONRenderer(),
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(0),
-        context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(file=log_file),
-        cache_logger_on_first_use=False,
-    )
-
-    return structlog.get_logger("audit")
 
 
 class AuditLogger:
@@ -100,6 +68,12 @@ class AuditLogger:
     def close(self) -> None:
         """Close the audit log file."""
         self._file.close()
+
+    def __enter__(self) -> AuditLogger:
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
 
 
 def _truncate_result(result: dict, max_len: int = 2000) -> dict:

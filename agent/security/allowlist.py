@@ -8,8 +8,7 @@ commands can execute.
 from __future__ import annotations
 
 import fnmatch
-import re
-import shlex
+import os
 
 import structlog
 
@@ -33,6 +32,9 @@ def is_command_permitted(command: str, permissions: RolePermissions) -> bool:
     Patterns use glob-style matching where * matches any sequence of
     characters. The entire command must match the pattern.
 
+    NOTE: This depends on the sanitizer running first to reject shell
+    metacharacters. As defense-in-depth, we also reject them here.
+
     Args:
         command: The full command string to check.
         permissions: The role's permission set.
@@ -41,6 +43,11 @@ def is_command_permitted(command: str, permissions: RolePermissions) -> bool:
         True if the command matches at least one allowed pattern.
     """
     command_stripped = command.strip()
+
+    # Defense-in-depth: reject dangerous chars even if sanitizer missed them
+    if any(c in command_stripped for c in ';|&`\n\r\x00'):
+        return False
+
     for pattern in permissions.allowed_commands:
         if fnmatch.fnmatch(command_stripped, pattern):
             return True
@@ -116,6 +123,9 @@ def check_path_read(path: str, role: str, permissions: RolePermissions) -> None:
 
 
 def _normalize_path(path: str) -> str:
-    """Normalize a path for comparison (resolve . but not ..)."""
-    # We don't resolve .. here because the sanitizer already rejects it
-    return path.rstrip("/") if path != "/" else path
+    """Normalize a path for comparison.
+
+    Uses os.path.normpath to handle redundant slashes and '.' components.
+    We don't resolve symlinks. The sanitizer rejects '..' before we get here.
+    """
+    return os.path.normpath(path)

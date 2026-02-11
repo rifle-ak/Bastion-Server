@@ -7,7 +7,6 @@ get_server_status runs read-only commands to aggregate health info.
 from __future__ import annotations
 
 import asyncio
-import shlex
 from typing import Any
 
 from agent.inventory import Inventory
@@ -92,6 +91,9 @@ class GetServerStatus(BaseTool):
                 exit_code=1,
             )
 
+        # These commands are hardcoded and always safe (read-only).
+        # Do NOT add destructive commands here — use the registry
+        # dispatch pipeline instead.
         commands = {
             "uptime": ["uptime"],
             "disk": ["df", "-h"],
@@ -106,7 +108,15 @@ class GetServerStatus(BaseTool):
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await proc.communicate()
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        proc.communicate(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+                    sections.append(f"=== {label.upper()} ===\nError: timed out")
+                    continue
                 output = stdout.decode("utf-8", errors="replace").rstrip()
                 sections.append(f"=== {label.upper()} ===\n{output}")
             except Exception as e:

@@ -22,9 +22,7 @@ class ToolResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dict suitable for returning to the model."""
-        result: dict[str, Any] = {}
-        if self.output:
-            result["output"] = self.output
+        result: dict[str, Any] = {"output": self.output}
         if self.error:
             result["error"] = self.error
         result["exit_code"] = self.exit_code

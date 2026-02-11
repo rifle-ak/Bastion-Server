@@ -10,6 +10,7 @@ refused without prompting.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import structlog
 from rich.console import Console
@@ -121,10 +122,15 @@ async def request_approval(
     return approved
 
 
-def _extract_string_values(d: dict) -> list[str]:
-    """Extract all string values from a dict (shallow)."""
+def _extract_string_values(obj: Any) -> list[str]:
+    """Recursively extract all string values from a nested structure."""
     values: list[str] = []
-    for v in d.values():
-        if isinstance(v, str):
-            values.append(v)
+    if isinstance(obj, str):
+        values.append(obj)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            values.extend(_extract_string_values(v))
+    elif isinstance(obj, (list, tuple)):
+        for item in obj:
+            values.extend(_extract_string_values(item))
     return values

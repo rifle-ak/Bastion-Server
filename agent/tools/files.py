@@ -7,7 +7,6 @@ allowed_paths_read. Write operations are not implemented in this phase.
 from __future__ import annotations
 
 import asyncio
-import shlex
 from typing import Any
 
 from agent.tools.base import BaseTool, ToolResult
@@ -81,7 +80,14 @@ class ReadFile(BaseTool):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=30
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return ToolResult(error="File read timed out", exit_code=124)
         except FileNotFoundError:
             return ToolResult(error=f"File not found: {path}", exit_code=1)
 

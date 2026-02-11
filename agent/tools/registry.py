@@ -8,7 +8,6 @@ calls through the security pipeline to the correct implementation.
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 import structlog
@@ -163,7 +162,13 @@ class ToolRegistry:
             )
         elif "command" in tool_input:
             # Local commands use the bastion role
-            server_info = self._inventory.get_server("localhost")
+            try:
+                server_info = self._inventory.get_server("localhost")
+            except KeyError:
+                raise AllowlistDenied(
+                    tool_input["command"],
+                    "bastion (no 'localhost' entry in server inventory)",
+                )
             check_command(
                 tool_input["command"],
                 server_info.definition.role,
