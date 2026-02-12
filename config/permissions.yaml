@@ -54,6 +54,86 @@ roles:
       - /opt/monitoring/
     allowed_paths_write: []
 
+  webhost:
+    allowed_commands:
+      - "uptime"
+      - "df -h"
+      - "free -h"
+      - "ps aux"
+      - "systemctl status *"
+      - "systemctl restart *"                       # REQUIRES APPROVAL
+      - "journalctl -u * --no-pager -n *"
+      # cPanel/WHM
+      - "/usr/local/cpanel/bin/whmapi1 *"
+      - "/scripts/restartsrv_*"                     # REQUIRES APPROVAL
+      - "/usr/local/cpanel/bin/cplogin"
+      - "whmapi1 *"
+      # Apache
+      - "httpd -S"
+      - "httpd -t"
+      - "apachectl status"
+      - "apachectl configtest"
+      # MySQL
+      - "mysqladmin status"
+      - "mysqladmin processlist"
+      # DNS
+      - "named-checkconf"
+      - "named-checkzone *"
+      # Mail
+      - "exim -bpc"
+      - "exim -bp"
+      # General
+      - "cat /var/log/*"
+      - "tail -n * /var/log/*"
+      - "tail -n * /usr/local/cpanel/logs/*"
+    allowed_paths_read:
+      - /var/log/
+      - /etc/httpd/
+      - /etc/my.cnf.d/
+      - /etc/named/
+      - /usr/local/cpanel/logs/
+      - /var/cpanel/
+      - /etc/cpanel/
+    allowed_paths_write: []
+
+  saltbox:
+    allowed_commands:
+      - "uptime"
+      - "df -h"
+      - "free -h"
+      - "ps aux"
+      - "systemctl status *"
+      - "journalctl -u * --no-pager -n *"
+      # Docker — Saltbox runs everything in containers
+      - "docker ps *"
+      - "docker logs *"
+      - "docker inspect *"
+      - "docker stats --no-stream"
+      - "docker restart *"                          # REQUIRES APPROVAL
+      - "docker compose -f /opt/saltbox/* ps"
+      - "docker compose -f /opt/saltbox/* logs *"
+      - "docker compose -f /opt/saltbox/* restart *" # REQUIRES APPROVAL
+      # Saltbox CLI
+      - "sb status"
+      - "sb list"
+      - "sb restart *"                              # REQUIRES APPROVAL
+      # Plex
+      - "cat /opt/plex/Library/Application Support/Plex Media Server/Logs/*"
+      - "tail -n * /opt/plex/Library/Application Support/Plex Media Server/Logs/*"
+      # General logs
+      - "cat /var/log/*"
+      - "tail -n * /var/log/*"
+    allowed_paths_read:
+      - /var/log/
+      - /opt/saltbox/
+      - /opt/plex/
+      - /opt/sonarr/
+      - /opt/radarr/
+      - /opt/nzbget/
+      - /opt/overseerr/
+      - /etc/docker/
+    allowed_paths_write: []
+
 approval_required_patterns:
   - "restart"
   - "stop"
