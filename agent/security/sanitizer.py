@@ -104,8 +104,8 @@ def sanitize(tool_name: str, tool_input: dict) -> dict:
     if "path" in tool_input:
         check_path(tool_input["path"])
 
-    # Validate container names, service names, etc. — no shell chars
-    for field in ("container", "service", "server"):
+    # Validate container names, service names, time ranges, etc. — no shell chars
+    for field in ("container", "service", "server", "since"):
         if field in tool_input:
             value = tool_input[field]
             if re.search(r'[;&|`$]', value):

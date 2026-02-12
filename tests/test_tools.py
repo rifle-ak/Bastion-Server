@@ -147,10 +147,11 @@ class TestToolResult:
         assert d["error"] == "warn"
         assert d["exit_code"] == 0
 
-    def test_to_dict_omits_empty(self):
+    def test_to_dict_omits_empty_error(self):
+        """output is always present; error is omitted when empty."""
         r = ToolResult(exit_code=0)
         d = r.to_dict()
-        assert "output" not in d
+        assert d["output"] == ""
         assert "error" not in d
 
 
