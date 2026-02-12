@@ -27,3 +27,30 @@ servers:
       - grafana
       - vmagent
     metrics_url: http://10.0.1.20:8428
+
+  webhost-01:
+    host: 10.0.1.30
+    role: webhost
+    user: claude-agent
+    key_path: ~/.ssh/keys/webhost-01_ed25519
+    description: "Alma 9 cPanel/WHM web hosting server"
+    services:
+      - cpanel
+      - httpd
+      - mysqld
+      - named
+      - exim
+
+  media-01:
+    host: 10.0.1.40
+    role: saltbox
+    user: claude-agent
+    key_path: ~/.ssh/keys/media-01_ed25519
+    description: "Saltbox media server — Plex, Sonarr, Radarr, etc."
+    services:
+      - docker
+      - plex
+      - sonarr
+      - radarr
+      - nzbget
+      - overseerr
