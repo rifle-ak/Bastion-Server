@@ -59,10 +59,18 @@ class TerminalUI:
     def display_tool_call(self, tool_name: str, tool_input: dict[str, Any]) -> None:
         """Display a tool call being made — compact one-liner for simple inputs."""
         if tool_input and all(isinstance(v, (str, int, bool)) for v in tool_input.values()):
-            parts = []
-            for k, v in tool_input.items():
-                parts.append(f"[dim]{k}=[/]{v}")
-            self._console.print(f"  [yellow]▶[/] [bold]{tool_name}[/]  {' '.join(parts)}")
+            # Build with Text to avoid Rich markup parsing of user values
+            text = Text("  ")
+            text.append("▶", style="yellow")
+            text.append(" ")
+            text.append(tool_name, style="bold")
+            text.append("  ")
+            for i, (k, v) in enumerate(tool_input.items()):
+                if i > 0:
+                    text.append(" ")
+                text.append(f"{k}=", style="dim")
+                text.append(str(v))
+            self._console.print(text)
         else:
             # Fall back to JSON for complex inputs
             input_str = json.dumps(tool_input, indent=2)
@@ -83,11 +91,21 @@ class TerminalUI:
         exit_code = result.get("exit_code", 0)
 
         if error and not output:
-            # Error-only: compact one-liner
-            self._console.print(f"  [red]✗[/] [bold]{tool_name}:[/] [red]{error}[/]")
+            # Error-only: compact one-liner (use Text to avoid markup parsing)
+            text = Text("  ")
+            text.append("✗", style="red")
+            text.append(" ")
+            text.append(f"{tool_name}: ", style="bold")
+            text.append(error, style="red")
+            self._console.print(text)
         elif not output and not error:
             # Empty result
-            self._console.print(f"  [green]✓[/] [bold]{tool_name}[/] [dim](no output)[/]")
+            text = Text("  ")
+            text.append("✓", style="green")
+            text.append(" ")
+            text.append(tool_name, style="bold")
+            text.append(" (no output)", style="dim")
+            self._console.print(text)
         else:
             # Truncate very long output for display
             display_output = output
