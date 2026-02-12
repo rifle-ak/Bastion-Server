@@ -90,8 +90,8 @@ class TerminalUI:
         error = result.get("error", "")
         exit_code = result.get("exit_code", 0)
 
-        if error and not output:
-            # Error-only: compact one-liner (use Text to avoid markup parsing)
+        if error and not output and exit_code != 0:
+            # Real error: compact one-liner (use Text to avoid markup parsing)
             text = Text("  ")
             text.append("✗", style="red")
             text.append(" ")
@@ -107,22 +107,25 @@ class TerminalUI:
             text.append(" (no output)", style="dim")
             self._console.print(text)
         else:
-            # Truncate very long output for display
-            display_output = output
-            truncated = len(output) > 3000
+            # Has content to display. Use stderr as display content when stdout
+            # is empty but exit was clean (e.g. docker logs for containers that
+            # log to stderr).
+            display_content = output if output else error
+            truncated = len(display_content) > 3000
             if truncated:
-                display_output = output[:3000]
+                display_content = display_content[:3000]
 
             style = "green" if exit_code == 0 else "yellow"
             icon = "✓" if exit_code == 0 else "⚠"
 
-            content = Text(display_output)
+            content = Text(display_content)
             if truncated:
                 content.append(
-                    f"\n\n─── truncated ({len(output):,} chars total) ───",
+                    f"\n\n─── truncated ({len(output or error):,} chars total) ───",
                     style="dim",
                 )
-            if error:
+            # Show stderr label only when it's supplementary to stdout
+            if error and output:
                 content.append(f"\nstderr: {error}", style="dim red")
 
             self._console.print(
