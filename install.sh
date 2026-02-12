@@ -90,7 +90,7 @@ fi
 
 # ─── 1. System Packages ────────────────────────────────────────────────────
 
-header "1/7  Installing System Packages"
+header "1/8  Installing System Packages"
 
 apt-get update -qq
 apt-get install -y -qq \
@@ -117,7 +117,7 @@ step "git $(git --version | awk '{print $3}')"
 
 # ─── 2. Agent User ─────────────────────────────────────────────────────────
 
-header "2/7  Creating Agent User"
+header "2/8  Creating Agent User"
 
 if ! id "${AGENT_USER}" &>/dev/null; then
     useradd --system --create-home --home-dir "${AGENT_HOME}" \
@@ -141,7 +141,7 @@ fi
 
 # ─── 3. Clone / Update Repository ──────────────────────────────────────────
 
-header "3/7  Installing Bastion Agent"
+header "3/8  Installing Bastion Agent"
 
 if [ -d "${INSTALL_DIR}/.git" ]; then
     skip "Repository exists, pulling latest..."
@@ -161,7 +161,7 @@ cd "${INSTALL_DIR}"
 
 # ─── 4. Python Virtualenv + Dependencies ───────────────────────────────────
 
-header "4/7  Setting Up Python Environment"
+header "4/8  Setting Up Python Environment"
 
 if [ ! -d "${VENV_DIR}" ]; then
     python3 -m venv "${VENV_DIR}"
@@ -183,7 +183,7 @@ step "Installed: ${AGENT_VERSION}"
 
 # ─── 5. Configuration ──────────────────────────────────────────────────────
 
-header "5/7  Configuring"
+header "5/8  Configuring"
 
 # Create system config directory
 mkdir -p "${CONFIG_DIR}"
@@ -229,7 +229,7 @@ sed -i "s|audit_log_path:.*|audit_log_path: ${LOG_DIR}/audit.jsonl|" "${CONFIG_D
 
 # ─── 6. Systemd Service ────────────────────────────────────────────────────
 
-header "6/7  Installing Systemd Service"
+header "6/8  Installing Systemd Service"
 
 # Write the service file with correct paths
 cat > /etc/systemd/system/bastion-agent.service << UNIT
@@ -270,9 +270,40 @@ UNIT
 systemctl daemon-reload
 step "Service installed: bastion-agent.service"
 
-# ─── 7. SSH Hardening ──────────────────────────────────────────────────────
+# ─── 7. CLI Launcher ──────────────────────────────────────────────────────
 
-header "7/7  Hardening SSH"
+header "7/8  Installing CLI Launcher"
+
+# Install the 'bastion' wrapper to /usr/local/bin
+if [ -f "${INSTALL_DIR}/scripts/bastion" ]; then
+    install -m 755 "${INSTALL_DIR}/scripts/bastion" /usr/local/bin/bastion
+    step "Installed: /usr/local/bin/bastion"
+else
+    warn "scripts/bastion not found — skipping launcher install"
+    warn "You may be on an older branch. Merge latest changes and re-run."
+fi
+
+# Add sudoers drop-in so staff can run 'bastion' without typing their password.
+# The wrapper auto-elevates to root to read /etc/bastion-agent/env, then
+# drops to claude-agent. This entry lets that auto-elevation be passwordless.
+SUDOERS_FILE="/etc/sudoers.d/bastion-agent"
+if [ ! -f "${SUDOERS_FILE}" ]; then
+    cat > "${SUDOERS_FILE}" << 'SUDOERS'
+# Allow members of the sudo group to launch the bastion agent without a password.
+# The wrapper script (/usr/local/bin/bastion) reads the API key from the
+# root-only env file, then drops privileges to the claude-agent user.
+%sudo ALL=(root) NOPASSWD: /usr/local/bin/bastion
+%sudo ALL=(root) NOPASSWD: /usr/local/bin/bastion *
+SUDOERS
+    chmod 440 "${SUDOERS_FILE}"
+    step "Sudoers entry: staff can run 'bastion' without password"
+else
+    skip "Sudoers entry already exists"
+fi
+
+# ─── 8. SSH Hardening ──────────────────────────────────────────────────────
+
+header "8/8  Hardening SSH"
 
 SSHD_CONFIG="/etc/ssh/sshd_config"
 SSHD_CHANGED=false
@@ -338,8 +369,8 @@ echo ""
 echo -e "  ${CYAN}2.${RESET} Generate SSH keys for downstream servers:"
 echo -e "     ${DIM}cd ${INSTALL_DIR} && sudo bash scripts/generate-ssh-keys.sh${RESET}"
 echo ""
-echo -e "  ${CYAN}3.${RESET} Run interactively (to test):"
-echo -e "     ${DIM}sudo -u ${AGENT_USER} ANTHROPIC_API_KEY=sk-ant-... ${VENV_DIR}/bin/bastion-agent run --config-dir ${CONFIG_DIR}${RESET}"
+echo -e "  ${CYAN}3.${RESET} Run interactively:"
+echo -e "     ${DIM}bastion${RESET}"
 echo ""
 echo -e "  ${CYAN}4.${RESET} Or enable as a service:"
 echo -e "     ${DIM}sudo systemctl enable --now bastion-agent${RESET}"
