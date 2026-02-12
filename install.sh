@@ -275,8 +275,13 @@ step "Service installed: bastion-agent.service"
 header "7/8  Installing CLI Launcher"
 
 # Install the 'bastion' wrapper to /usr/local/bin
-install -m 755 "${INSTALL_DIR}/scripts/bastion" /usr/local/bin/bastion
-step "Installed: /usr/local/bin/bastion"
+if [ -f "${INSTALL_DIR}/scripts/bastion" ]; then
+    install -m 755 "${INSTALL_DIR}/scripts/bastion" /usr/local/bin/bastion
+    step "Installed: /usr/local/bin/bastion"
+else
+    warn "scripts/bastion not found — skipping launcher install"
+    warn "You may be on an older branch. Merge latest changes and re-run."
+fi
 
 # Add sudoers drop-in so staff can run 'bastion' without typing their password.
 # The wrapper auto-elevates to root to read /etc/bastion-agent/env, then
