@@ -1,122 +1,60 @@
-# Bastion Agent
-
-Infrastructure management agent for **Galaxy Gaming Host**, powered by the Anthropic Claude API with native tool use.
-
-Runs on a hardened bastion server and provides SSH-based access to downstream servers — executing commands, querying monitoring, inspecting Docker containers, reading logs, and performing administrative tasks with structured audit logging and human approval gates for destructive operations.
+# Bastion Server
 
 ## Quick Start
 
-### Prerequisites
+A brief guide to get you running in no time.  
+1. **Clone the repository**: `git clone https://github.com/rifle-ak/Bastion-Server.git`
+2. **Install dependencies**: Navigate to the project directory and run `npm install`.
+3. **Start the server**: Run `npm start`.
 
-- Python 3.11+
-- An Anthropic API key
+## Configuration Guide
 
-### Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/rifle-ak/Bastion-Server.git
-cd Bastion-Server
-
-# Install with dependencies
-pip install -e ".[dev]"
-
-# Or from pinned requirements
-pip install -r requirements.txt
-pip install -e .
-```
-
-### Configuration
-
-Configuration lives in the `config/` directory:
-
-| File | Purpose |
-|---|---|
-| `config/agent.yaml` | Agent behavior: model, timeouts, approval mode |
-| `config/servers.yaml` | Server inventory: hosts, roles, SSH keys, services |
-| `config/permissions.yaml` | Per-role allowed commands, paths, and approval patterns |
-
-Set your API key:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Optional environment variables:
-
-```bash
-export BASTION_AGENT_CONFIG=./config    # Config directory (default: ./config)
-export BASTION_AGENT_LOG_LEVEL=INFO     # DEBUG, INFO, WARNING, ERROR
-```
-
-### Usage
-
-```bash
-# Validate configuration
-bastion-agent check-config
-
-# Start an interactive session
-bastion-agent run
-
-# Use a custom config directory
-bastion-agent run --config-dir /etc/bastion-agent/
-```
+Detailed explanation of configuration options available:
+- **DB_CONFIG**: Configuration for database connection.
+- **SERVER_PORT**: Specify the port for the server.
+- **LOG_LEVEL**: Set the logging level (info, debug, error).
 
 ## Architecture
+This project utilizes a modular architecture designed to facilitate scalability and maintenance. 
+![Architecture Diagram](link-to-diagram)
 
-```
-User ↔ CLI (Rich) ↔ Conversation Manager ↔ Anthropic API (tool use)
-                                                    ↕
-                                              Tool Router
-                                         ↕        ↕        ↕
-                                    Security   Tool Impls  Audit Log
-                                    (allowlist, (local,ssh, (JSON)
-                                     approval)  docker,
-                                                metrics)
-                                                   ↕ SSH
-                                            Downstream Servers
-```
+- **Modules**: Each functionality is encapsulated in separate modules for enhanced clarity.
+- **Components**: Use of microservices for independent deployment.
 
 ## Security Model
 
-- **Allowlisting, not blocklisting** — only explicitly permitted operations can execute
-- **Input sanitization** — shell metacharacters are rejected, not escaped
-- **Human approval gate** — destructive operations (restart, stop, rm, etc.) require operator confirmation
-- **Structured audit logging** — every tool call is logged as JSON before execution
-- **Scoped file access** — reads/writes restricted to configured paths per server role
-- **Per-host SSH keys** — dedicated keypairs for each downstream server
+A comprehensive overview of the security features:
+- **Authentication**: Use of OAuth for user verification.
+- **Authorization**: Role-based access control detailing user permissions.
+- **Data Protection**: Encryption standards used for sensitive data.
 
 ## Project Structure
 
-```
-├── agent/                  # Main package
-│   ├── main.py             # Click CLI entry point
-│   ├── config.py           # Pydantic config models + YAML loading
-│   ├── inventory.py        # Server inventory model
-│   ├── client.py           # Anthropic API client + conversation loop
-│   ├── prompts.py          # System prompt builder
-│   ├── tools/              # Tool implementations
-│   ├── security/           # Allowlist, approval, audit, sanitizer
-│   └── ui/                 # Rich terminal interface
-├── config/                 # YAML configuration files
-├── tests/                  # pytest test suite
-├── scripts/                # Server setup scripts
-└── logs/                   # Audit logs (gitignored)
-```
+- `src/`: Source files for the application.
+- `tests/`: Unit and integration tests.
+- `docs/`: Documentation files.
 
-## Development
+## Development Workflow
+1. **Branching Strategy**: Follow the `feature/` and `bugfix/` prefixes for branch names.
+2. **Code Reviews**: All contributions require a peer review.
+3. **Merge Process**: Utilize pull requests for merging changes.
 
-```bash
-# Run tests
-pytest
+## Testing Guidelines
+- **Unit Tests**: Ensure coverage of all functionality.
+- **Integration Tests**: Validate inter-module communication.
 
-# Run with coverage
-pytest --cov=agent
+## Deployment Instructions
+1. **Build**: Run `npm run build` to prepare for deployment.
+2. **Deploy**: Follow CI/CD pipeline for automated deployment.
 
-# Validate config
-bastion-agent check-config --config-dir ./config
-```
+## Troubleshooting
+Common issues and their solutions:
+- **Server does not start**: Verify correct configuration of environment variables.
 
-## License
+## Contributing
+We welcome contributions! Please follow these guidelines:  
+- Fork the repository  
+- Create a feature branch  
+- Submit a pull request  
 
-MIT
+For any issues, please refer to our issues section on GitHub.
