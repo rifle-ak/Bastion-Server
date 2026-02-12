@@ -174,7 +174,7 @@ You'll see the banner and a prompt:
 ```
 ╭──────────────────── Galaxy Gaming Host ────────────────────╮
 │ Bastion Agent v0.1.0                                       │
-│ Model: claude-sonnet-4-5-20250514                          │
+│ Model: claude-sonnet-4-5-20250929                          │
 │ Servers: localhost, gameserver-01, monitoring               │
 │ Type /quit or /exit to end the session.                    │
 ╰────────────────────────────────────────────────────────────╯
@@ -293,7 +293,7 @@ All config lives in `/etc/bastion-agent/` (or `./config/` for local dev).
 ### `agent.yaml` — Agent Behavior
 
 ```yaml
-model: claude-sonnet-4-5-20250514    # Claude model to use
+model: claude-sonnet-4-5-20250929    # Claude model to use
 max_tokens: 4096                      # Max response tokens
 max_tool_iterations: 10               # Safety limit on tool call rounds
 command_timeout: 30                   # Default command timeout (seconds)

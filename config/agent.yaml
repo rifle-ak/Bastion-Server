@@ -1,4 +1,4 @@
-model: claude-sonnet-4-5-20250514
+model: claude-sonnet-4-5-20250929
 max_tokens: 4096
 max_tool_iterations: 10
 command_timeout: 30
