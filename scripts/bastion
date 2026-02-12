@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# bastion — Launch the bastion agent interactively.
+#
+# Installed to /usr/local/bin/bastion so staff can just type:
+#   bastion                    Start an interactive session
+#   bastion check-config       Validate configuration
+#   bastion --help             Show all commands
+#
+# The API key is loaded from /etc/bastion-agent/env (root-only, 0600)
+# and passed via process environment — it never appears in ps output.
+
+set -euo pipefail
+
+ENV_FILE="/etc/bastion-agent/env"
+CONFIG_DIR="/etc/bastion-agent"
+AGENT_BIN="/opt/bastion-agent/venv/bin/bastion-agent"
+AGENT_USER="claude-agent"
+
+# ─── Auto-elevate to root (needed to read the secure env file) ───────────
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo "$0" "$@"
+fi
+
+# ─── Validate installation ───────────────────────────────────────────────
+
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo "Error: $ENV_FILE not found." >&2
+    echo "Run: sudo bash /opt/bastion-agent/install.sh" >&2
+    exit 1
+fi
+
+if [[ ! -x "$AGENT_BIN" ]]; then
+    echo "Error: Agent not installed at $AGENT_BIN" >&2
+    exit 1
+fi
+
+# Check the API key is actually set (not the placeholder)
+if grep -q "sk-ant-your-key-here" "$ENV_FILE" 2>/dev/null; then
+    echo "Error: API key not configured." >&2
+    echo "Edit the env file:  sudo nano $ENV_FILE" >&2
+    exit 1
+fi
+
+# ─── Load environment ────────────────────────────────────────────────────
+
+# Source the env file — only root can read it (0600)
+set -a
+. "$ENV_FILE"
+set +a
+
+export BASTION_AGENT_LOG_LEVEL="${BASTION_AGENT_LOG_LEVEL:-INFO}"
+
+# ─── Build command args ──────────────────────────────────────────────────
+
+ARGS=("$@")
+
+if [[ ${#ARGS[@]} -eq 0 ]]; then
+    # Default: start interactive session
+    ARGS=("run" "--config-dir" "$CONFIG_DIR")
+else
+    # Inject --config-dir for subcommands that need it
+    case "${ARGS[0]}" in
+        run|check-config)
+            if [[ ! " ${ARGS[*]} " =~ " --config-dir " ]]; then
+                ARGS+=("--config-dir" "$CONFIG_DIR")
+            fi
+            ;;
+    esac
+fi
+
+# ─── Drop privileges and run ─────────────────────────────────────────────
+
+# runuser passes our environment (including the API key) without putting
+# it in the command line — so it stays out of /proc/PID/cmdline and ps.
+exec runuser -u "$AGENT_USER" -- "$AGENT_BIN" "${ARGS[@]}"
