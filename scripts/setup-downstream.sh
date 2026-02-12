@@ -44,6 +44,12 @@ if getent group systemd-journal &>/dev/null; then
     echo "[+] Added to systemd-journal group"
 fi
 
+# adm group (for /var/log access)
+if getent group adm &>/dev/null; then
+    usermod -aG adm "${AGENT_USER}"
+    echo "[+] Added to adm group"
+fi
+
 # 4. Grant limited sudo (read-only commands only)
 SUDOERS_FILE="/etc/sudoers.d/bastion-agent"
 echo "[+] Setting up limited sudoers"

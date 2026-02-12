@@ -79,13 +79,6 @@ class GetServerStatus(BaseTool):
         except KeyError as e:
             return ToolResult(error=str(e), exit_code=1)
 
-        if server != "localhost":
-            return ToolResult(
-                error=f"Remote server status not yet implemented (server: {server}). "
-                "SSH tools coming in build step 7.",
-                exit_code=1,
-            )
-
         # These commands are hardcoded and always safe (read-only).
         # Do NOT add destructive commands here — use the registry
         # dispatch pipeline instead.
