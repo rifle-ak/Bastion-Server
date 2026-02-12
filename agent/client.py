@@ -7,6 +7,7 @@ through the tool registry.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -18,6 +19,14 @@ from agent.tools.registry import ToolRegistry
 from agent.ui.terminal import TerminalUI
 
 logger = structlog.get_logger()
+
+# Max characters to keep per tool result in message history.
+# The user still sees the full output — this only affects what we
+# send back to the API on subsequent turns to control token usage.
+_MAX_TOOL_RESULT_CHARS = 3000
+
+_RATE_LIMIT_MAX_RETRIES = 3
+_RATE_LIMIT_BASE_DELAY = 2.0  # seconds
 
 
 class ConversationClient:
@@ -79,13 +88,7 @@ class ConversationClient:
             iterations += 1
 
             try:
-                response = self._client.messages.create(
-                    model=self._config.model,
-                    max_tokens=self._config.max_tokens,
-                    system=self._system_prompt,
-                    tools=self._registry.get_schemas(),
-                    messages=self._messages,
-                )
+                response = await self._api_call_with_retry()
             except anthropic.APIError as e:
                 self._ui.display_error(f"API error: {e}")
                 logger.error("api_error", error=str(e))
@@ -121,7 +124,7 @@ class ConversationClient:
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": json.dumps(result),
+                        "content": _truncate_tool_result(json.dumps(result)),
                     })
                 elif hasattr(block, "text") and block.text:
                     # Claude may include thinking text alongside tool calls
@@ -136,3 +139,47 @@ class ConversationClient:
             "Stopping to prevent runaway loops."
         )
         logger.warning("max_tool_iterations_reached", limit=self._config.max_tool_iterations)
+
+    async def _api_call_with_retry(self) -> anthropic.types.Message:
+        """Call the Anthropic API with retry on rate limit errors."""
+        for attempt in range(_RATE_LIMIT_MAX_RETRIES + 1):
+            try:
+                return self._client.messages.create(
+                    model=self._config.model,
+                    max_tokens=self._config.max_tokens,
+                    system=self._system_prompt,
+                    tools=self._registry.get_schemas(),
+                    messages=self._messages,
+                )
+            except anthropic.RateLimitError:
+                if attempt >= _RATE_LIMIT_MAX_RETRIES:
+                    raise
+                delay = _RATE_LIMIT_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "rate_limited",
+                    attempt=attempt + 1,
+                    retry_in=delay,
+                )
+                self._ui.display_error(
+                    f"Rate limited — retrying in {delay:.0f}s "
+                    f"(attempt {attempt + 1}/{_RATE_LIMIT_MAX_RETRIES})"
+                )
+                await asyncio.sleep(delay)
+        # unreachable, but keeps type checkers happy
+        raise RuntimeError("retry loop exited unexpectedly")
+
+
+def _truncate_tool_result(content: str) -> str:
+    """Truncate a tool result string for message history.
+
+    The user sees the full output in the terminal. This only limits
+    what gets sent back to the API to stay within token budgets.
+    """
+    if len(content) <= _MAX_TOOL_RESULT_CHARS:
+        return content
+    half = _MAX_TOOL_RESULT_CHARS // 2
+    return (
+        content[:half]
+        + f"\n\n... ({len(content) - _MAX_TOOL_RESULT_CHARS} chars truncated) ...\n\n"
+        + content[-half:]
+    )
