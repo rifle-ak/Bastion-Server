@@ -229,6 +229,7 @@ The conversation loop:
 ```python
 async def conversation_loop(self):
     messages = []
+
     while True:
         user_input = await self.ui.get_input()
         if user_input in ("/quit", "/exit"):

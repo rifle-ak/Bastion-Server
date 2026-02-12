@@ -64,7 +64,14 @@ class RunLocalCommand(BaseTool):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=30
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return ToolResult(error="Command timed out", exit_code=124)
         except FileNotFoundError:
             return ToolResult(error=f"Command not found: {args[0]}", exit_code=127)
         except PermissionError:

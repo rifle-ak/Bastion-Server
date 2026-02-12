@@ -16,23 +16,25 @@ logger = structlog.get_logger()
 # These patterns are REJECTED outright — never escaped
 FORBIDDEN_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r'[;&|]'),            # Command chaining
-    re.compile(r'\$\('),             # Command substitution $(...)
+    re.compile(r'\$[\({]'),          # Command/variable substitution $() and ${}
     re.compile(r'`'),                # Backtick substitution
     re.compile(r'\.\.'),             # Path traversal
     re.compile(r'>\s*/'),            # Redirect to absolute path
     re.compile(r'>>\s*/'),           # Append to absolute path
     re.compile(r'\b(eval|exec)\b'),  # Code execution keywords
+    re.compile(r'[\n\r\x00]'),       # Newline/carriage-return/null-byte injection
 ]
 
 # Human-readable reason for each pattern (same order)
 _PATTERN_REASONS: list[str] = [
     "command chaining characters (;, &, |)",
-    "command substitution $()",
+    "command/variable substitution ($( or ${)",
     "backtick substitution",
     "path traversal (..)",
     "redirect to absolute path",
     "append to absolute path",
     "eval/exec keyword",
+    "newline/null-byte injection",
 ]
 
 
@@ -74,8 +76,10 @@ def check_path(path: str) -> None:
         raise SanitizationError("path", path, "path traversal (..)")
     if re.search(r'[;&|`]', path):
         raise SanitizationError("path", path, "shell metacharacters in path")
-    if re.search(r'\$\(', path):
-        raise SanitizationError("path", path, "command substitution in path")
+    if re.search(r'\$[\({]', path):
+        raise SanitizationError("path", path, "command/variable substitution in path")
+    if re.search(r'[\n\r\x00]', path):
+        raise SanitizationError("path", path, "newline/null-byte in path")
 
 
 def sanitize(tool_name: str, tool_input: dict) -> dict:

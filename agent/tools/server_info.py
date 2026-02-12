@@ -79,6 +79,16 @@ class GetServerStatus(BaseTool):
         except KeyError as e:
             return ToolResult(error=str(e), exit_code=1)
 
+        if server != "localhost":
+            return ToolResult(
+                error=f"Remote server status not yet implemented (server: {server}). "
+                "SSH tools coming in build step 7.",
+                exit_code=1,
+            )
+
+        # These commands are hardcoded and always safe (read-only).
+        # Do NOT add destructive commands here — use the registry
+        # dispatch pipeline instead.
         commands = {
             "uptime": "uptime",
             "disk": "df -h",
@@ -101,7 +111,15 @@ class GetServerStatus(BaseTool):
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await proc.communicate()
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        proc.communicate(), timeout=10
+                    )
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+                    sections.append(f"=== {label.upper()} ===\nError: timed out")
+                    continue
                 output = stdout.decode("utf-8", errors="replace").rstrip()
                 sections.append(f"=== {label.upper()} ===\n{output}")
             except Exception as e:
