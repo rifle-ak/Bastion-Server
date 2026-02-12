@@ -57,17 +57,24 @@ class TerminalUI:
         self._console.print(Markdown(text))
 
     def display_tool_call(self, tool_name: str, tool_input: dict[str, Any]) -> None:
-        """Display a tool call being made."""
-        input_str = json.dumps(tool_input, indent=2)
-        syntax = Syntax(input_str, "json", theme="monokai", line_numbers=False)
-
-        panel = Panel(
-            syntax,
-            title=f"[bold yellow]Tool Call:[/] {tool_name}",
-            border_style="yellow",
-            padding=(0, 1),
-        )
-        self._console.print(panel)
+        """Display a tool call being made — compact one-liner for simple inputs."""
+        if tool_input and all(isinstance(v, (str, int, bool)) for v in tool_input.values()):
+            parts = []
+            for k, v in tool_input.items():
+                parts.append(f"[dim]{k}=[/]{v}")
+            self._console.print(f"  [yellow]▶[/] [bold]{tool_name}[/]  {' '.join(parts)}")
+        else:
+            # Fall back to JSON for complex inputs
+            input_str = json.dumps(tool_input, indent=2)
+            syntax = Syntax(input_str, "json", theme="monokai", line_numbers=False)
+            self._console.print(
+                Panel(
+                    syntax,
+                    title=f"[bold yellow]▶ {tool_name}[/]",
+                    border_style="yellow",
+                    padding=(0, 1),
+                )
+            )
 
     def display_tool_result(self, tool_name: str, result: dict[str, Any]) -> None:
         """Display the result of a tool call."""
@@ -76,32 +83,34 @@ class TerminalUI:
         exit_code = result.get("exit_code", 0)
 
         if error and not output:
-            # Error-only result
-            self._console.print(
-                Panel(
-                    Text(error, style="red"),
-                    title=f"[bold red]Error:[/] {tool_name}",
-                    border_style="red",
-                    padding=(0, 1),
-                )
-            )
+            # Error-only: compact one-liner
+            self._console.print(f"  [red]✗[/] [bold]{tool_name}:[/] [red]{error}[/]")
+        elif not output and not error:
+            # Empty result
+            self._console.print(f"  [green]✓[/] [bold]{tool_name}[/] [dim](no output)[/]")
         else:
-            # Truncate very long output for display (full output goes to Claude)
+            # Truncate very long output for display
             display_output = output
-            if len(display_output) > 3000:
-                display_output = display_output[:3000] + f"\n... ({len(output)} chars total)"
+            truncated = len(output) > 3000
+            if truncated:
+                display_output = output[:3000]
 
             style = "green" if exit_code == 0 else "yellow"
-            title_prefix = "Result" if exit_code == 0 else f"Result (exit {exit_code})"
+            icon = "✓" if exit_code == 0 else "⚠"
 
             content = Text(display_output)
+            if truncated:
+                content.append(
+                    f"\n\n─── truncated ({len(output):,} chars total) ───",
+                    style="dim",
+                )
             if error:
                 content.append(f"\nstderr: {error}", style="dim red")
 
             self._console.print(
                 Panel(
                     content,
-                    title=f"[bold {style}]{title_prefix}:[/] {tool_name}",
+                    title=f"[bold {style}]{icon} {tool_name}[/]",
                     border_style=style,
                     padding=(0, 1),
                 )
