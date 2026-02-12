@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
-from pathlib import Path
 
 import click
 import structlog
@@ -16,7 +16,7 @@ logger = structlog.get_logger()
 
 
 def _configure_logging(log_level: str) -> None:
-    """Configure structlog for JSON output."""
+    """Configure structlog for console output."""
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -31,6 +31,76 @@ def _configure_logging(log_level: str) -> None:
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
+
+def _asyncssh_available() -> bool:
+    """Check if asyncssh can be imported without crashing.
+
+    Uses a subprocess probe because asyncssh's cryptography backend
+    can cause an unrecoverable Rust panic if the C bindings are broken.
+    """
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, "-c", "import asyncssh"],
+        capture_output=True,
+        timeout=5,
+    )
+    return result.returncode == 0
+
+
+def _build_agent(config_path: str):
+    """Build all agent components from config.
+
+    Returns:
+        Tuple of (ConversationClient, AuditLogger).
+    """
+    from agent.client import ConversationClient
+    from agent.inventory import Inventory
+    from agent.prompts import build_system_prompt
+    from agent.security.audit import AuditLogger
+    from agent.tools.docker_tools import DockerLogs, DockerPs
+    from agent.tools.files import ReadFile
+    from agent.tools.local import RunLocalCommand
+    from agent.tools.monitoring import QueryMetrics
+    from agent.tools.registry import ToolRegistry
+    from agent.tools.server_info import GetServerStatus, ListServers
+    from agent.tools.systemd import ServiceJournal, ServiceStatus
+    from agent.ui.terminal import TerminalUI
+
+    agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
+    inventory = Inventory(servers_cfg, permissions_cfg)
+    audit = AuditLogger(agent_cfg.audit_log_path)
+
+    # Build tool registry and register all tools
+    registry = ToolRegistry(agent_cfg, inventory, audit)
+    registry.register(RunLocalCommand())
+    registry.register(ReadFile(inventory))
+    registry.register(ListServers(inventory))
+    registry.register(GetServerStatus(inventory))
+    registry.register(DockerPs(inventory))
+    registry.register(DockerLogs(inventory))
+    registry.register(ServiceStatus(inventory))
+    registry.register(ServiceJournal(inventory))
+    registry.register(QueryMetrics(inventory))
+
+    # Register SSH tools if asyncssh is available
+    if _asyncssh_available():
+        from agent.tools.remote import RunRemoteCommand
+        registry.register(RunRemoteCommand(inventory, agent_cfg.command_timeout))
+    else:
+        logger.warning("ssh_tools_unavailable", msg="SSH tools disabled (asyncssh not available)")
+
+    # Build system prompt and UI
+    system_prompt = build_system_prompt(inventory, registry)
+    ui = TerminalUI()
+
+    # Show banner
+    ui.display_banner(__version__, agent_cfg.model, list(servers_cfg.servers.keys()))
+
+    # Build conversation client
+    client = ConversationClient(agent_cfg, registry, system_prompt, ui)
+
+    return client, audit
 
 
 @click.group()
@@ -59,26 +129,28 @@ def run(config_dir: str | None, log_level: str | None) -> None:
 
     _configure_logging(level)
 
+    # Check for API key early
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        click.echo("Error: ANTHROPIC_API_KEY environment variable is not set.", err=True)
+        sys.exit(1)
+
     try:
-        agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
+        client, audit = _build_agent(config_path)
     except FileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     except Exception as e:
-        click.echo(f"Configuration error: {e}", err=True)
+        click.echo(f"Startup error: {e}", err=True)
+        logger.exception("startup_failed")
         sys.exit(1)
 
-    logger.info(
-        "config_loaded",
-        config_dir=config_path,
-        model=agent_cfg.model,
-        servers=list(servers_cfg.servers.keys()),
-    )
-
-    click.echo(f"Bastion Agent v{__version__}")
-    click.echo(f"Model: {agent_cfg.model}")
-    click.echo(f"Servers: {', '.join(servers_cfg.servers.keys())}")
-    click.echo("Agent session not yet implemented — coming in build step 5.")
+    try:
+        asyncio.run(client.run())
+    except KeyboardInterrupt:
+        click.echo("\nSession interrupted.")
+    finally:
+        audit.close()
+        logger.info("session_ended")
 
 
 @cli.command()
