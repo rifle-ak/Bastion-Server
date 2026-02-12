@@ -7,7 +7,9 @@ since we can use the stdlib for simple GET requests.
 
 from __future__ import annotations
 
+import base64
 import json
+import os
 import time
 import urllib.parse
 import urllib.request
@@ -15,7 +17,7 @@ from typing import Any
 
 import structlog
 
-from agent.inventory import Inventory
+from agent.inventory import Inventory, ServerInfo
 from agent.tools.base import BaseTool, ToolResult
 
 logger = structlog.get_logger()
@@ -85,12 +87,14 @@ class QueryMetrics(BaseTool):
     ) -> ToolResult:
         """Execute a PromQL query against VictoriaMetrics."""
         # Find a server with a metrics_url
-        metrics_url = self._find_metrics_url()
-        if not metrics_url:
+        metrics_server = self._find_metrics_server()
+        if not metrics_server:
             return ToolResult(
                 error="No server with metrics_url configured in inventory.",
                 exit_code=1,
             )
+
+        metrics_url = metrics_server.definition.metrics_url
 
         # Parse time range
         range_seconds = _TIME_RANGES.get(time_range)
@@ -120,6 +124,12 @@ class QueryMetrics(BaseTool):
             req = urllib.request.Request(url, method="GET")
             req.add_header("Accept", "application/json")
 
+            # Add basic auth if configured
+            auth = _resolve_metrics_auth(metrics_server.definition.metrics_auth)
+            if auth:
+                encoded = base64.b64encode(auth.encode("utf-8")).decode("ascii")
+                req.add_header("Authorization", f"Basic {encoded}")
+
             import asyncio
             loop = asyncio.get_running_loop()
             response_data = await loop.run_in_executor(None, lambda: _fetch_url(req))
@@ -144,13 +154,22 @@ class QueryMetrics(BaseTool):
             exit_code=0,
         )
 
-    def _find_metrics_url(self) -> str | None:
+    def _find_metrics_server(self) -> ServerInfo | None:
         """Find the first server with a metrics_url configured."""
         for name in self._inventory.server_names:
             server = self._inventory.get_server(name)
             if server.definition.metrics_url:
-                return server.definition.metrics_url
+                return server
         return None
+
+
+def _resolve_metrics_auth(auth_value: str | None) -> str | None:
+    """Resolve metrics auth, reading from env var if prefixed with $."""
+    if not auth_value:
+        return None
+    if auth_value.startswith("$"):
+        return os.environ.get(auth_value[1:])
+    return auth_value
 
 
 def _fetch_url(req: urllib.request.Request, timeout: int = 10) -> str:

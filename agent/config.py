@@ -59,6 +59,11 @@ class ServerDefinition(BaseModel):
     known_hosts_path: str | None = None
     services: list[str] = Field(default_factory=list)
     metrics_url: str | None = None
+    metrics_auth: str | None = Field(
+        default=None,
+        description="Basic auth credentials for metrics URL (user:password). "
+        "If the value starts with '$', it is read from that environment variable.",
+    )
 
     @field_validator("key_path")
     @classmethod
