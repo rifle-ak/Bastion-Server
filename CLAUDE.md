@@ -59,6 +59,7 @@ Do NOT use LangChain, LlamaIndex, CrewAI, or any other "agent framework". This i
 bastion-agent/
 ├── CLAUDE.md                    # This file
 ├── README.md                    # User-facing documentation
+├── install.sh                   # One-command production installer
 ├── pyproject.toml               # Project metadata & dependencies (use this, not setup.py)
 ├── requirements.txt             # Pinned dependencies for reproducibility
 ├── agent/
@@ -74,10 +75,11 @@ bastion-agent/
 │   │   ├── base.py              # Base tool class / protocol
 │   │   ├── local.py             # Local command execution (bastion itself)
 │   │   ├── remote.py            # SSH command execution on downstream hosts
-│   │   ├── docker_tools.py      # Docker inspect, logs, ps, restart (local + remote)
-│   │   ├── monitoring.py        # VictoriaMetrics PromQL queries, Grafana API
-│   │   ├── files.py             # Scoped file read/write/list operations
-│   │   └── systemd.py           # Systemctl status, journal reads
+│   │   ├── files.py             # Scoped file read operations
+│   │   ├── server_info.py       # list_servers, get_server_status
+│   │   ├── docker_tools.py      # docker_ps, docker_logs (local + remote)
+│   │   ├── systemd.py           # service_status, service_journal
+│   │   └── monitoring.py        # VictoriaMetrics PromQL queries
 │   ├── security/
 │   │   ├── __init__.py
 │   │   ├── allowlist.py         # Command allowlist engine (pattern-based)
@@ -96,14 +98,15 @@ bastion-agent/
 │   ├── setup-downstream.sh      # Downstream server prep script (run per-host)
 │   └── generate-ssh-keys.sh     # Generate per-host SSH keypairs
 ├── systemd/
-│   └── bastion-agent.service    # Systemd unit file (for running as daemon later)
+│   └── bastion-agent.service    # Systemd unit file
 ├── tests/
 │   ├── conftest.py
-│   ├── test_allowlist.py
 │   ├── test_sanitizer.py
-│   ├── test_tools.py
+│   ├── test_allowlist.py
 │   ├── test_approval.py
-│   └── test_inventory.py
+│   ├── test_audit.py
+│   ├── test_inventory.py
+│   └── test_tools.py
 └── logs/                        # Audit logs directory (gitignored)
 ```
 

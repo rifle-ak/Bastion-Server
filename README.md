@@ -4,12 +4,9 @@ Infrastructure management agent for **Galaxy Gaming Host**, powered by the Anthr
 
 Runs on a hardened bastion server and provides intelligent SSH-based access to your downstream servers — executing commands, querying monitoring, inspecting Docker containers, reading logs, and performing administrative tasks. Every action goes through structured audit logging, command allowlisting, and a human approval gate for anything destructive.
 
----
 Think of it as giving Claude a very strict, very paranoid set of keys to your servers. It can check on things, read logs, and restart services, but only the ones you explicitly allow, and it has to ask permission before doing anything scary.
 
-## Fresh Server Install
-
-Starting from a clean Ubuntu 24.04 box? Here's everything you need, start to finish.
+---
 
 ## System Requirements
 
@@ -57,7 +54,7 @@ That's it. The installer handles everything:
 
 ### Inspect Before Running
 
-If you want to read the script first:
+If you want to read the script first (and you should, you're piping curl into sudo bash):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rifle-ak/Bastion-Server/main/install.sh -o install.sh
@@ -87,74 +84,6 @@ sudo INSTALL_DIR=/srv/bastion bash install.sh
 After the installer finishes, you need to do three things.
 
 ### 1. Set Your API Key
-- **Ubuntu 24.04** (or any Linux with Python 3.12+)
-- **An Anthropic API key** (you're going to need one of these, no way around it)
-- **SSH access** to your downstream servers (the ones you want the agent to manage)
-
-### Step 1: System dependencies
-
-```bash
-# Python 3.12 ships with Ubuntu 24.04, but just in case
-sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
-```
-
-### Step 2: Clone and install
-
-```bash
-git clone https://github.com/rifle-ak/Bastion-Server.git
-cd Bastion-Server
-
-# Install as an editable package (so `bastion-agent` CLI works)
-pip install -e ".[dev]"
-
-# Or if you prefer pinned versions for reproducibility
-pip install -r requirements.txt
-pip install -e .
-```
-
-### Step 3: Create the agent user
-
-The agent connects to downstream servers as `claude-agent`. Create this user on each server you want to manage:
-
-```bash
-# On each downstream server
-sudo useradd -m -s /bin/bash claude-agent
-```
-
-Give it minimal sudo permissions for the commands you actually need. Don't give it root. Don't do it. You'll regret it at 3am when you're reading audit logs trying to figure out what happened.
-
-### Step 4: Set up SSH keys
-
-One keypair per downstream server. Ed25519, because it's not 2005:
-
-```bash
-# On the bastion server
-mkdir -p ~/.ssh/keys
-
-# Generate a key for each server
-ssh-keygen -t ed25519 -f ~/.ssh/keys/gameserver-01_ed25519 -N "" -C "bastion-agent@gameserver-01"
-ssh-keygen -t ed25519 -f ~/.ssh/keys/monitoring_ed25519 -N "" -C "bastion-agent@monitoring"
-
-# Copy public keys to each server
-ssh-copy-id -i ~/.ssh/keys/gameserver-01_ed25519.pub claude-agent@10.0.1.10
-ssh-copy-id -i ~/.ssh/keys/monitoring_ed25519.pub claude-agent@10.0.1.20
-```
-
-The key paths in `config/servers.yaml` default to `~/.ssh/keys/<servername>_ed25519`. If you put them somewhere else, update the config.
-
-### Step 5: Configure
-
-Configuration lives in `config/`. The defaults are already set up for the Galaxy Gaming Host infrastructure, but review them:
-
-| File | What it does |
-|------|-------------|
-| `config/agent.yaml` | Agent behavior: model, timeouts, approval mode |
-| `config/servers.yaml` | Server inventory: hosts, roles, SSH keys, services |
-| `config/permissions.yaml` | Per-role allowed commands, paths, and approval patterns |
-
-The permissions file is the important one. It defines exactly what commands each server role can run. The defaults are conservative — you can always loosen them later, but you can't un-`rm -rf` something.
-
-### Step 6: Set your API key
 
 ```bash
 sudo nano /etc/bastion-agent/env
@@ -213,17 +142,6 @@ Generate per-host keypairs:
 cd /opt/bastion-agent
 sudo bash scripts/generate-ssh-keys.sh
 ```
-Or throw it in a `.env` file (gitignored, so you won't accidentally publish it to the world):
-
-```bash
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
-```
-
-### Step 7: Validate and run
-
-```bash
-# Make sure your config is valid before you trust it with your servers
-bastion-agent check-config
 
 This reads your `servers.yaml` and generates an Ed25519 keypair for each SSH-enabled server. Then copy the public keys to each downstream host:
 
@@ -265,18 +183,6 @@ You'll see the banner and a prompt:
 ```
 
 ### Run as a Service
-# Custom config directory (if you moved it)
-bastion-agent run --config-dir /etc/bastion-agent/
-```
-
-Optional environment variables:
-
-```bash
-export BASTION_AGENT_CONFIG=./config    # Config directory (default: ./config)
-export BASTION_AGENT_LOG_LEVEL=INFO     # DEBUG, INFO, WARNING, ERROR
-```
-
-## Architecture
 
 ```bash
 sudo systemctl enable --now bastion-agent
@@ -286,16 +192,6 @@ View logs:
 
 ```bash
 sudo journalctl -u bastion-agent -f
-User <-> CLI (Rich) <-> Conversation Manager <-> Anthropic API (tool use)
-                                                        |
-                                                  Tool Router
-                                             |        |        |
-                                        Security   Tool Impls  Audit Log
-                                        (allowlist, (local,ssh, (JSON)
-                                         approval)  docker,
-                                                    metrics)
-                                                       | SSH
-                                                Downstream Servers
 ```
 
 ### Validate Configuration
@@ -329,6 +225,8 @@ The agent has 10 built-in tools. Claude picks the right one based on your reques
 
 ## Security Model
 
+This is the part that lets you sleep at night.
+
 ### Allowlisting, Not Blocklisting
 
 Every command must match an explicit pattern in `permissions.yaml` before it can execute. Unknown commands are rejected by default.
@@ -346,7 +244,7 @@ roles:
 
 ### Input Sanitization
 
-Shell metacharacters are **rejected, not escaped**. The following are blocked in all command arguments:
+Shell metacharacters are **rejected, not escaped** (escaping is a game you eventually lose). The following are blocked in all command arguments:
 
 | Pattern | Reason |
 |---|---|
@@ -477,14 +375,6 @@ approval_required_patterns:           # substrings that trigger approval
 ```
 
 ---
-This is the part that lets you sleep at night:
-
-- **Allowlisting, not blocklisting** — only explicitly permitted operations can execute
-- **Input sanitization** — shell metacharacters are rejected, not escaped (escaping is a game you eventually lose)
-- **Human approval gate** — destructive operations (restart, stop, rm, etc.) require operator confirmation
-- **Structured audit logging** — every tool call is logged as JSON before execution, no exceptions
-- **Scoped file access** — reads/writes restricted to configured paths per server role
-- **Per-host SSH keys** — dedicated keypairs for each downstream server
 
 ## Project Structure
 
@@ -532,10 +422,12 @@ bastion-agent/
 ├── systemd/
 │   └── bastion-agent.service        # Systemd unit file
 │
-├── tests/                           # 78 tests, all mocked (no real infra)
+├── tests/
+│   ├── conftest.py
 │   ├── test_sanitizer.py
 │   ├── test_allowlist.py
 │   ├── test_approval.py
+│   ├── test_audit.py
 │   ├── test_inventory.py
 │   └── test_tools.py
 │
@@ -559,7 +451,7 @@ pip install -e ".[dev]"
 ### Run Tests
 
 ```bash
-pytest                    # all 78 tests
+pytest                    # all tests
 pytest -v                 # verbose
 pytest --cov=agent        # with coverage report
 ```
