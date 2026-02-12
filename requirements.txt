@@ -1,5 +1,5 @@
 # Core dependencies - pinned for reproducibility
-anthropic==0.39.0
+anthropic>=0.49.0
 asyncssh==2.14.2
 click==8.1.7
 pydantic==2.10.4
