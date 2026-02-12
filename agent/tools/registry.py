@@ -135,9 +135,16 @@ class ToolRegistry:
             self._audit.log_error(tool_name, sanitized, error=str(e))
             return {"error": f"Execution failed: {e}"}
 
-        # 6. Log success and return
+        # 6. Log result and return
         result_dict = result.to_dict()
-        self._audit.log_success(tool_name, sanitized, result=result_dict)
+        if result.success:
+            self._audit.log_success(tool_name, sanitized, result=result_dict)
+        else:
+            self._audit.log_error(
+                tool_name,
+                sanitized,
+                error=result.error or f"exit code {result.exit_code}",
+            )
         return result_dict
 
     def _check_allowlist(self, tool_name: str, tool_input: dict[str, Any]) -> None:

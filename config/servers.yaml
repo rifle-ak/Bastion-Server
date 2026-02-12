@@ -13,7 +13,7 @@ servers:
     key_path: ~/.ssh/keys/gameserver-01_ed25519
     description: "Primary Rust game server - Pterodactyl Wings node"
     services:
-      - pterodactyl-wings
+      - wings
       - docker
 
   monitoring:

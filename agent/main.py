@@ -144,11 +144,13 @@ def run(config_dir: str | None, log_level: str | None) -> None:
         logger.exception("startup_failed")
         sys.exit(1)
 
+    audit.log_session_start()
     try:
         asyncio.run(client.run())
     except KeyboardInterrupt:
         click.echo("\nSession interrupted.")
     finally:
+        audit.log_session_end()
         audit.close()
         logger.info("session_ended")
 

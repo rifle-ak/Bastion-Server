@@ -35,6 +35,22 @@ class AuditLogger:
             ],
         )
 
+    def log_session_start(self) -> None:
+        """Log that a new interactive session has started."""
+        import getpass
+        import os
+
+        self._logger.info(
+            "session_start",
+            user=getpass.getuser(),
+            pid=os.getpid(),
+            tty=os.ttyname(0) if os.isatty(0) else "none",
+        )
+
+    def log_session_end(self) -> None:
+        """Log that a session has ended."""
+        self._logger.info("session_end")
+
     def log_attempt(self, tool_name: str, tool_input: dict) -> None:
         """Log that a tool call is being attempted."""
         self._logger.info("tool_attempt", tool=tool_name, input=tool_input)

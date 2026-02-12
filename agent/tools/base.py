@@ -7,9 +7,18 @@ tool schemas and dispatch calls.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
+
+# Matches ANSI CSI sequences (\x1b[...letter) and OSC sequences (\x1b]...BEL)
+_ANSI_RE = re.compile(r"\x1b(?:\[[0-9;]*[A-Za-z]|\][^\x07]*\x07)")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes and carriage returns from text."""
+    return _ANSI_RE.sub("", text).replace("\r", "")
 
 
 @dataclass(frozen=True)
@@ -21,10 +30,14 @@ class ToolResult:
     exit_code: int = 0
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to a dict suitable for returning to the model."""
-        result: dict[str, Any] = {"output": self.output}
+        """Convert to a dict suitable for returning to the model.
+
+        Strips ANSI escape codes so Claude doesn't waste tokens on
+        terminal formatting and the audit log stays clean.
+        """
+        result: dict[str, Any] = {"output": _strip_ansi(self.output)}
         if self.error:
-            result["error"] = self.error
+            result["error"] = _strip_ansi(self.error)
         result["exit_code"] = self.exit_code
         return result
 
