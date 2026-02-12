@@ -1,60 +1,90 @@
-# Bastion Server
+# Bastion Server Documentation
 
-## Quick Start
+## Overview  
+The Bastion Server is a powerful tool designed to secure and manage access to various systems within a network. Its capabilities include:
+- **Bastion Agent**: Provides a secure gateway for managing access to other hosts.
+- **Integration with Galaxy Gaming Host**: Seamless integration that allows for specialized gaming host management and enhanced security features.
 
-A brief guide to get you running in no time.  
-1. **Clone the repository**: `git clone https://github.com/rifle-ak/Bastion-Server.git`
-2. **Install dependencies**: Navigate to the project directory and run `npm install`.
-3. **Start the server**: Run `npm start`.
+## Prerequisites  
+To run the Bastion Server, ensure the following prerequisites are met:
+- **Python Version**: 3.8 or later
+- **Operating System**: Linux or Windows (specifically tested on Ubuntu 20.04 and Windows 10)
 
-## Configuration Guide
+## Installation  
+Follow these steps to install the Bastion Server:
+1. **Create a virtual environment**:
+   ```bash
+   python3 -m venv bastion-env
+   ```
+2. **Activate the virtual environment**:
+   - On Linux/Mac:
+     ```bash
+     source bastion-env/bin/activate
+     ```
+   - On Windows:
+     ```bash
+     .\bastion-env\Scripts\activate
+     ```
+3. **Install the required packages**:
+   ```bash
+   pip install -r requirements.txt
+   ``` 
 
-Detailed explanation of configuration options available:
-- **DB_CONFIG**: Configuration for database connection.
-- **SERVER_PORT**: Specify the port for the server.
-- **LOG_LEVEL**: Set the logging level (info, debug, error).
+## Configuration  
+Configuration is managed through a YAML file. Below are the key configuration options:
+- **Authentication**: Configuration for user authentication including methods and details.
+- **Networking**: Port and IP settings for Bastion access.
 
-## Architecture
-This project utilizes a modular architecture designed to facilitate scalability and maintenance. 
-![Architecture Diagram](link-to-diagram)
+Example YAML snippet:
+```yaml
+authentication:
+  method: "OAuth2"
+  users:
+    - username: user1
+      password: pass1
+```
 
-- **Modules**: Each functionality is encapsulated in separate modules for enhanced clarity.
-- **Components**: Use of microservices for independent deployment.
+## Usage Examples  
+- **Basic Connection**:
+  To connect to an instance:
+  ```bash
+  bastion connect --host [hostname]
+  ```
+- **Advanced Scenario**:  
+  For multi-user setup with various permission levels:
+  ```bash
+  bastion configure --multi-user
+  ```
 
-## Security Model
+## Architecture Diagram  
+![Architecture Diagram](link-to-architecture-diagram)
+## Security Model  
+- **Best Practices**: Ensure all access is logged, use strong passwords, and implement IP whitelisting.
 
-A comprehensive overview of the security features:
-- **Authentication**: Use of OAuth for user verification.
-- **Authorization**: Role-based access control detailing user permissions.
-- **Data Protection**: Encryption standards used for sensitive data.
+## Project Structure  
+- `bastion/`: Main application directory.
+- `tests/`: Contains unit and integration tests.
 
-## Project Structure
+## Development Setup  
+1. Clone the repository  
+   ```bash
+   git clone https://github.com/rifle-ak/Bastion-Server.git
+   ```
+2. Run the tests to ensure everything is working:
+   ```bash
+   pytest
+   ```
 
-- `src/`: Source files for the application.
-- `tests/`: Unit and integration tests.
-- `docs/`: Documentation files.
+## Troubleshooting  
+If you encounter issues:
+- Check log files located in the `logs/` directory.
+- Ensure all dependencies are installed by re-running `pip install -r requirements.txt`.
 
-## Development Workflow
-1. **Branching Strategy**: Follow the `feature/` and `bugfix/` prefixes for branch names.
-2. **Code Reviews**: All contributions require a peer review.
-3. **Merge Process**: Utilize pull requests for merging changes.
+## Contribution Guidelines  
+We welcome contributions! Please adhere to our coding standards and ensure all tests are passing before submitting a pull request.
 
-## Testing Guidelines
-- **Unit Tests**: Ensure coverage of all functionality.
-- **Integration Tests**: Validate inter-module communication.
+## API Reference  
+Refer to the API reference document located in `docs/API.md` for detailed information on available tools and methods.
 
-## Deployment Instructions
-1. **Build**: Run `npm run build` to prepare for deployment.
-2. **Deploy**: Follow CI/CD pipeline for automated deployment.
-
-## Troubleshooting
-Common issues and their solutions:
-- **Server does not start**: Verify correct configuration of environment variables.
-
-## Contributing
-We welcome contributions! Please follow these guidelines:  
-- Fork the repository  
-- Create a feature branch  
-- Submit a pull request  
-
-For any issues, please refer to our issues section on GitHub.
+## License  
+This project is licensed under the MIT License. See `LICENSE` for details.
