@@ -43,14 +43,15 @@ tests/                    # pytest suite — 100+ tests
 
 | What | Why |
 |------|-----|
-| Python 3.8+ | Runtime |
+| Python 3.12+ | Runtime |
 | Click 8.1 | CLI framework |
-| Pydantic 2.10 | Config validation (strict mode) |
+| Pydantic 2.5+ | Config validation (strict mode) |
 | PyYAML 6.0 | Config file parsing (safe_load only) |
 | asyncio + asyncssh | Async execution + future SSH support |
 | structlog | Structured JSON logging |
 | Rich | Terminal formatting and approval prompts |
 | anthropic 0.39 | Claude API client |
+| Ruff | Linting and formatting |
 | pytest + pytest-asyncio | Testing |
 
 ## Security Pipeline

@@ -23,7 +23,7 @@ Starting from a clean Linux box? Here's what you need.
 
 ### Prerequisites
 
-- **Python 3.8+** (3.9 recommended)
+- **Python 3.12+**
 - **pip** (comes with Python, but just in case)
 - **git** (you probably already have this)
 - **SSH keys** for your remote servers (ed25519, because it's not 2005)
@@ -147,7 +147,7 @@ Bastion-Server/
 ├── tests/                    # 100+ tests across 4 modules
 ├── logs/                     # Audit logs (gitignored)
 ├── requirements.txt          # Pinned dependencies
-├── pyproject.toml            # Poetry/packaging config
+├── pyproject.toml            # Packaging config (setuptools)
 └── bastion-agent.tar.gz      # Pre-packaged agent
 ```
 
@@ -186,4 +186,4 @@ There are 100+ tests covering the security pipeline (sanitizer, allowlist, appro
 
 ## License
 
-MPL-2.0. See [LICENSE](LICENSE) for the full text.
+MIT. See [LICENSE](LICENSE) for the full text.

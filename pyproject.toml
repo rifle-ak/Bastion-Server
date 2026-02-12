@@ -1,40 +1,44 @@
-[tool.poetry]
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
 name = "bastion-agent"
 version = "0.1.0"
-description = "AI-powered infrastructure management agent for Galaxy Gaming Host"
-authors = ["rifle-ak"]
-license = "MPL-2.0"
-readme = "README.md"
-repository = "https://github.com/rifle-ak/Bastion-Server"
-keywords = ["infrastructure", "agent", "security", "bastion"]
-categories = ["Development Tools"]
+description = "Infrastructure management agent for Galaxy Gaming Host"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Galaxy Gaming Host"},
+]
+dependencies = [
+    "anthropic>=0.39.0",
+    "asyncssh>=2.14.0",
+    "click>=8.1.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "PyYAML>=6.0.1",
+    "rich>=13.7.0",
+    "structlog>=23.2.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.8"
-anthropic = "^0.39.0"
-asyncssh = "^2.14.2"
-click = "^8.1.7"
-pydantic = "^2.10.4"
-pydantic-settings = "^2.7.1"
-PyYAML = "^6.0.2"
-rich = "^13.9.4"
-structlog = "^24.4.0"
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.4"
-pytest-asyncio = "^0.23.8"
-pytest-cov = "^4.1.0"
-flake8 = "^7.0"
-black = "^24.0"
+[project.scripts]
+bastion-agent = "agent.main:cli"
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry-core.masonry.builder"
-
-[tool.black]
-line-length = 100
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+[tool.setuptools.packages.find]
+include = ["agent*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
