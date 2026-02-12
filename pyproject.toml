@@ -1,45 +1,32 @@
-[build-system]
-requires = ["setuptools>=68.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "bastion-agent"
+[tool.poetry]
+name = "your-package-name"
 version = "0.1.0"
-description = "Infrastructure management agent for Galaxy Gaming Host"
-requires-python = ">=3.12"
-license = {text = "MIT"}
-authors = [
-    {name = "Galaxy Gaming Host"},
+description = "A short description of your package"
+authors = ["Your Name <youremail@example.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://yourpackagehomepage.com"
+repository = "https://github.com/rifle-ak/Bastion-Server"
+documentation = "https://yourpackagedocs.com"
+keywords = ["keyword1", "keyword2", "keyword3"]
+categories = ["Development Tools"]
+
+[tool.poetry.dependencies]
+python = "^3.6 || ^3.7 || ^3.8 || ^3.9"
+
+[tool.poetry.dev-dependencies]
+linting = [
+    { package = "flake8", version = "^3.9.0" },
+    { package = "black", version = "^21.0b0" }
 ]
 
-dependencies = [
-    "anthropic>=0.39.0",
-    "asyncssh>=2.14.0",
-    "click>=8.1.0",
-    "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
-    "PyYAML>=6.0.1",
-    "rich>=13.7.0",
-    "structlog>=23.2.0",
-]
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry-core.masonry.builder"
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=4.1.0",
-]
-
-[project.scripts]
-bastion-agent = "agent.main:cli"
-
-[tool.setuptools.packages.find]
-include = ["agent*"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-
-[tool.ruff]
-target-version = "py312"
-line-length = 100
+[tool.poetry.classifiers]
+Programming Language :: Python :: 3
+Programming Language :: Python :: 3.6
+Programming Language :: Python :: 3.7
+Programming Language :: Python :: 3.8
+Programming Language :: Python :: 3.9
