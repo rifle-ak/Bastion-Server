@@ -24,7 +24,7 @@ class ApprovalMode(str, Enum):
 class AgentConfig(BaseModel):
     """Top-level agent behavior configuration loaded from agent.yaml."""
 
-    model: str = "claude-sonnet-4-5-20250514"
+    model: str = "claude-sonnet-4-5-20250929"
     max_tokens: int = Field(default=4096, ge=1, le=8192)
     max_tool_iterations: int = Field(default=10, ge=1, le=50)
     command_timeout: int = Field(default=30, ge=1, le=300)
