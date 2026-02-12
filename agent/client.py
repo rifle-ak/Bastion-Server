@@ -93,9 +93,16 @@ class ConversationClient:
                 self._messages.pop()
                 return
 
-            # Append assistant response to history
+            # Append assistant response to history.
+            # Convert content blocks to plain dicts to avoid pydantic
+            # serialization issues when they're passed back in subsequent
+            # API calls.
             assistant_content = response.content
-            self._messages.append({"role": "assistant", "content": assistant_content})
+            serialized_content = [
+                block.model_dump() if hasattr(block, "model_dump") else block
+                for block in assistant_content
+            ]
+            self._messages.append({"role": "assistant", "content": serialized_content})
 
             # If Claude is done talking (no more tool calls), display and return
             if response.stop_reason == "end_turn":
