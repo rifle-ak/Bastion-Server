@@ -1,189 +1,173 @@
-# Bastion Server
+# Bastion Agent
 
-An AI-powered infrastructure management agent for Galaxy Gaming Host. Think of it as giving Claude a very strict, very paranoid set of keys to your servers — it can check on things, read logs, and restart services, but only the ones you explicitly allow, and it has to ask permission before doing anything scary.
+Infrastructure management agent for **Galaxy Gaming Host**, powered by the Anthropic Claude API with native tool use.
 
-## What It Does
+Runs on a hardened bastion server and provides SSH-based access to downstream servers — executing commands, querying monitoring, inspecting Docker containers, reading logs, and performing administrative tasks with structured audit logging and human approval gates for destructive operations.
 
-Bastion Agent sits on a bastion host and manages your infrastructure through a multi-layered security pipeline. Every command goes through:
-
-```
-Tool Call -> Sanitize -> Audit Log -> Allowlist Check -> Human Approval -> Execute
-```
-
-No shortcuts. No exceptions. Every single action is logged, allowlisted, and (for anything destructive) requires your explicit approval. If Claude tries to get creative with shell metacharacters or path traversal, it gets shut down before anything touches the OS.
-
-**Currently manages:**
-- **Bastion host** (localhost) — the machine running the agent
-- **Game server** (Pterodactyl Wings + Docker) — your Rust server
-- **Monitoring stack** (VictoriaMetrics + Grafana) — keeping an eye on everything
+Think of it as giving Claude a very strict, very paranoid set of keys to your servers. It can check on things, read logs, and restart services, but only the ones you explicitly allow, and it has to ask permission before doing anything scary.
 
 ## Fresh Server Install
 
-Starting from a clean Linux box? Here's what you need.
+Starting from a clean Ubuntu 24.04 box? Here's everything you need, start to finish.
 
 ### Prerequisites
 
-- **Python 3.12+**
-- **pip** (comes with Python, but just in case)
-- **git** (you probably already have this)
-- **SSH keys** for your remote servers (ed25519, because it's not 2005)
+- **Ubuntu 24.04** (or any Linux with Python 3.12+)
+- **An Anthropic API key** (you're going to need one of these, no way around it)
+- **SSH access** to your downstream servers (the ones you want the agent to manage)
 
-### Step 1: Clone and set up the environment
+### Step 1: System dependencies
+
+```bash
+# Python 3.12 ships with Ubuntu 24.04, but just in case
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv git
+```
+
+### Step 2: Clone and install
 
 ```bash
 git clone https://github.com/rifle-ak/Bastion-Server.git
 cd Bastion-Server
 
-python3 -m venv .venv
-source .venv/bin/activate
+# Install as an editable package (so `bastion-agent` CLI works)
+pip install -e ".[dev]"
+
+# Or if you prefer pinned versions for reproducibility
 pip install -r requirements.txt
+pip install -e .
 ```
 
-### Step 2: Set up your SSH keys
+### Step 3: Create the agent user
 
-The agent connects to remote servers as `claude-agent`. You'll need SSH keys for each remote host. The default paths are configured in `config/servers.yaml`:
+The agent connects to downstream servers as `claude-agent`. Create this user on each server you want to manage:
 
 ```bash
+# On each downstream server
+sudo useradd -m -s /bin/bash claude-agent
+```
+
+Give it minimal sudo permissions for the commands you actually need. Don't give it root. Don't do it. You'll regret it at 3am when you're reading audit logs trying to figure out what happened.
+
+### Step 4: Set up SSH keys
+
+One keypair per downstream server. Ed25519, because it's not 2005:
+
+```bash
+# On the bastion server
 mkdir -p ~/.ssh/keys
 
-# Generate keys for each server (or copy existing ones)
-ssh-keygen -t ed25519 -f ~/.ssh/keys/gameserver-01_ed25519 -N ""
-ssh-keygen -t ed25519 -f ~/.ssh/keys/monitoring_ed25519 -N ""
+# Generate a key for each server
+ssh-keygen -t ed25519 -f ~/.ssh/keys/gameserver-01_ed25519 -N "" -C "bastion-agent@gameserver-01"
+ssh-keygen -t ed25519 -f ~/.ssh/keys/monitoring_ed25519 -N "" -C "bastion-agent@monitoring"
 
-# Copy the public keys to each server
+# Copy public keys to each server
 ssh-copy-id -i ~/.ssh/keys/gameserver-01_ed25519.pub claude-agent@10.0.1.10
 ssh-copy-id -i ~/.ssh/keys/monitoring_ed25519.pub claude-agent@10.0.1.20
 ```
 
-Make sure the `claude-agent` user exists on each remote server with appropriate (minimal) sudo permissions. Don't give it root. Seriously.
+The key paths in `config/servers.yaml` default to `~/.ssh/keys/<servername>_ed25519`. If you put them somewhere else, update the config.
 
-### Step 3: Configure
+### Step 5: Configure
 
-All configuration lives in `config/`. The files that ship with the repo are already set up for the Galaxy Gaming Host infrastructure, but you'll want to review them:
+Configuration lives in `config/`. The defaults are already set up for the Galaxy Gaming Host infrastructure, but review them:
 
-**`config/agent.yaml`** — Agent behavior settings:
-```yaml
-model: claude-sonnet-4-5-20250514   # The brain
-max_tokens: 4096                     # Response size limit
-max_tool_iterations: 10              # Max back-and-forth per session
-command_timeout: 30                  # Seconds before a command is killed
-audit_log_path: ./logs/audit.jsonl   # Where every action gets logged
-approval_mode: interactive           # "interactive" or "auto-deny"
-```
+| File | What it does |
+|------|-------------|
+| `config/agent.yaml` | Agent behavior: model, timeouts, approval mode |
+| `config/servers.yaml` | Server inventory: hosts, roles, SSH keys, services |
+| `config/permissions.yaml` | Per-role allowed commands, paths, and approval patterns |
 
-**`config/servers.yaml`** — Your server inventory. Add/remove servers here. Each server needs a `role` that maps to permissions.
+The permissions file is the important one. It defines exactly what commands each server role can run. The defaults are conservative — you can always loosen them later, but you can't un-`rm -rf` something.
 
-**`config/permissions.yaml`** — The big one. This defines what commands each role can run, what paths it can read, and what patterns trigger the "are you sure?" approval prompt. The defaults are conservative — you can always loosen them later, but you can't un-`rm -rf` something.
-
-### Step 4: Validate your config
-
-Before you run anything:
+### Step 6: Set your API key
 
 ```bash
-python -m agent.main check-config
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-This will parse all three YAML files, validate them against the Pydantic models, and tell you if anything's misconfigured. Fix any errors before proceeding.
-
-### Step 5: Set up the Anthropic API key
+Or throw it in a `.env` file (gitignored, so you won't accidentally publish it to the world):
 
 ```bash
-export ANTHROPIC_API_KEY="your-key-here"
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
 ```
 
-Or put it in a `.env` file (which is gitignored, so you won't accidentally commit it):
+### Step 7: Validate and run
 
 ```bash
-echo 'ANTHROPIC_API_KEY=your-key-here' > .env
+# Make sure your config is valid before you trust it with your servers
+bastion-agent check-config
+
+# Start an interactive session
+bastion-agent run
+
+# Custom config directory (if you moved it)
+bastion-agent run --config-dir /etc/bastion-agent/
 ```
 
-### Step 6: Run it
+Optional environment variables:
 
 ```bash
-python -m agent.main run
+export BASTION_AGENT_CONFIG=./config    # Config directory (default: ./config)
+export BASTION_AGENT_LOG_LEVEL=INFO     # DEBUG, INFO, WARNING, ERROR
 ```
 
-> **Note:** The interactive agent session is still under development (build step 5). Currently the security pipeline, tool registry, and local command execution are fully functional and tested.
+## Architecture
 
-## Security Architecture
+```
+User <-> CLI (Rich) <-> Conversation Manager <-> Anthropic API (tool use)
+                                                        |
+                                                  Tool Router
+                                             |        |        |
+                                        Security   Tool Impls  Audit Log
+                                        (allowlist, (local,ssh, (JSON)
+                                         approval)  docker,
+                                                    metrics)
+                                                       | SSH
+                                                Downstream Servers
+```
 
-This isn't just "run commands on a server." There are five layers between a tool call and actual execution:
+## Security Model
 
-| Layer | What It Does | How It Fails |
-|-------|-------------|--------------|
-| **Sanitizer** | Rejects shell injection, command chaining, path traversal, null bytes | Hard reject — no escaping, no sanitizing, just "no" |
-| **Audit Logger** | Records every attempt (success, denied, error, timeout) as JSONL | It doesn't fail. Everything gets logged. Always. |
-| **Allowlist** | Checks commands against glob patterns and paths against role-based ACLs | Denied if not explicitly permitted — allowlist, not blocklist |
-| **Approval Gate** | Prompts you for confirmation on destructive operations (restart, stop, rm, etc.) | In `auto-deny` mode, anything needing approval is automatically refused |
-| **Executor** | Runs the command with `asyncio.create_subprocess_exec` (never `shell=True`) with timeout | Timeout kills the process after 30s (configurable) |
+This is the part that lets you sleep at night:
 
-Rejected patterns include: `;`, `|`, `&`, `$()`, `` ` ``, `..`, `eval`, `exec`, null bytes, and newline injection.
+- **Allowlisting, not blocklisting** — only explicitly permitted operations can execute
+- **Input sanitization** — shell metacharacters are rejected, not escaped (escaping is a game you eventually lose)
+- **Human approval gate** — destructive operations (restart, stop, rm, etc.) require operator confirmation
+- **Structured audit logging** — every tool call is logged as JSON before execution, no exceptions
+- **Scoped file access** — reads/writes restricted to configured paths per server role
+- **Per-host SSH keys** — dedicated keypairs for each downstream server
 
 ## Project Structure
 
 ```
-Bastion-Server/
-├── agent/                    # Application code
-│   ├── __init__.py           # Version (0.1.0)
-│   ├── main.py               # CLI entry point (Click)
-│   ├── config.py             # Pydantic config models
-│   ├── inventory.py          # Server inventory management
-│   ├── security/             # The paranoia layer
-│   │   ├── allowlist.py      # Command & path allowlisting
-│   │   ├── approval.py       # Human approval gates
-│   │   ├── audit.py          # JSONL audit logging
-│   │   └── sanitizer.py      # Input rejection (not sanitization)
-│   ├── tools/                # What the agent can actually do
-│   │   ├── base.py           # Abstract tool interface
-│   │   ├── registry.py       # Tool dispatch + security pipeline
-│   │   ├── local.py          # Local command execution
-│   │   ├── files.py          # File reading
-│   │   └── server_info.py    # Server status queries
-│   └── ui/                   # Terminal UI (placeholder)
-├── config/                   # YAML configuration
-│   ├── agent.yaml            # Agent behavior
-│   ├── servers.yaml          # Server inventory
-│   └── permissions.yaml      # RBAC + approval patterns
-├── tests/                    # 100+ tests across 4 modules
-├── logs/                     # Audit logs (gitignored)
-├── requirements.txt          # Pinned dependencies
-├── pyproject.toml            # Packaging config (setuptools)
-└── bastion-agent.tar.gz      # Pre-packaged agent
+├── agent/                  # Main package
+│   ├── main.py             # Click CLI entry point
+│   ├── config.py           # Pydantic config models + YAML loading
+│   ├── inventory.py        # Server inventory model
+│   ├── client.py           # Anthropic API client + conversation loop
+│   ├── prompts.py          # System prompt builder
+│   ├── tools/              # Tool implementations
+│   ├── security/           # Allowlist, approval, audit, sanitizer
+│   └── ui/                 # Rich terminal interface
+├── config/                 # YAML configuration files
+├── tests/                  # pytest test suite
+├── scripts/                # Server setup scripts
+└── logs/                   # Audit logs (gitignored)
 ```
 
-## Running Tests
+## Development
 
 ```bash
-# Run the full suite
+# Run tests
 pytest
 
-# With coverage
-pytest --cov
+# Run with coverage
+pytest --cov=agent
 
-# Specific module
-pytest tests/test_allowlist.py -v
+# Validate config
+bastion-agent check-config --config-dir ./config
 ```
-
-There are 100+ tests covering the security pipeline (sanitizer, allowlist, approval, audit). If you change anything in `agent/security/`, run the tests. All of them.
-
-## Build Status
-
-- [x] Project scaffold, config system, CLI
-- [x] Security layer (sanitizer, allowlist, approval, audit)
-- [x] Tool registry with security pipeline
-- [x] Local tools (run_local_command, read_file, list_servers, get_server_status)
-- [ ] Interactive agent session (the main loop)
-- [ ] Terminal UI
-- [ ] SSH remote execution
-
-## Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key | (required) |
-| `BASTION_AGENT_CONFIG` | Path to config directory | `./config` |
-| `BASTION_AGENT_LOG_LEVEL` | Log level (DEBUG/INFO/WARNING/ERROR) | `INFO` |
 
 ## License
 
-MIT. See [LICENSE](LICENSE) for the full text.
+MIT
