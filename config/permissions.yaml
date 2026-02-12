@@ -5,9 +5,13 @@ roles:
       - "df -h"
       - "free -h"
       - "ps aux"
+      - "ps aux *"
+      - "top -bn1"
       - "systemctl status *"
       - "journalctl -u * --no-pager -n *"
+      - "journalctl -u * --no-pager -n * --since *"
       - "docker ps"
+      - "docker ps *"
       - "docker logs *"
       - "cat /var/log/*"
       - "tail -n * /var/log/*"
@@ -23,8 +27,11 @@ roles:
       - "df -h"
       - "free -h"
       - "ps aux"
+      - "ps aux *"
+      - "top -bn1"
       - "systemctl status *"
       - "journalctl -u * --no-pager -n *"
+      - "journalctl -u * --no-pager -n * --since *"
       - "docker ps *"
       - "docker logs *"
       - "docker inspect *"
@@ -42,6 +49,9 @@ roles:
       - "uptime"
       - "df -h"
       - "free -h"
+      - "ps aux"
+      - "ps aux *"
+      - "top -bn1"
       - "docker ps *"
       - "docker logs *"
       - "docker compose -f /opt/monitoring/* ps"
@@ -49,6 +59,7 @@ roles:
       - "docker compose -f /opt/monitoring/* restart *"
       - "systemctl status *"
       - "journalctl -u * --no-pager -n *"
+      - "journalctl -u * --no-pager -n * --since *"
     allowed_paths_read:
       - /var/log/
       - /opt/monitoring/
@@ -60,9 +71,12 @@ roles:
       - "df -h"
       - "free -h"
       - "ps aux"
+      - "ps aux *"
+      - "top -bn1"
       - "systemctl status *"
       - "systemctl restart *"                       # REQUIRES APPROVAL
       - "journalctl -u * --no-pager -n *"
+      - "journalctl -u * --no-pager -n * --since *"
       # cPanel/WHM
       - "/usr/local/cpanel/bin/whmapi1 *"
       - "/scripts/restartsrv_*"                     # REQUIRES APPROVAL
@@ -102,8 +116,11 @@ roles:
       - "df -h"
       - "free -h"
       - "ps aux"
+      - "ps aux *"
+      - "top -bn1"
       - "systemctl status *"
       - "journalctl -u * --no-pager -n *"
+      - "journalctl -u * --no-pager -n * --since *"
       # Docker — Saltbox runs everything in containers
       - "docker ps *"
       - "docker logs *"
