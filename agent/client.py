@@ -16,7 +16,6 @@ import structlog
 
 from agent.config import AgentConfig
 from agent.tools.registry import ToolRegistry
-from agent.ui.terminal import TerminalUI
 
 logger = structlog.get_logger()
 
@@ -37,7 +36,7 @@ class ConversationClient:
         config: AgentConfig,
         registry: ToolRegistry,
         system_prompt: str,
-        ui: TerminalUI,
+        ui: Any,
     ) -> None:
         """Initialize the conversation client.
 
@@ -45,7 +44,9 @@ class ConversationClient:
             config: Agent configuration (model, max_tokens, etc.).
             registry: Tool registry for dispatch and schema generation.
             system_prompt: The assembled system prompt.
-            ui: Terminal UI for display.
+            ui: UI instance (TerminalUI or DaemonUI) — must implement
+                get_input, display_response, display_tool_call,
+                display_tool_result, display_error, display_goodbye.
         """
         self._config = config
         self._registry = registry
@@ -74,6 +75,22 @@ class ConversationClient:
             self._messages.append({"role": "user", "content": user_input})
 
             await self._process_response()
+
+    async def process_message(self, message: str) -> None:
+        """Process a single user message and generate a response.
+
+        Used by daemon mode where the outer session loop is managed
+        externally rather than by the interactive ``run()`` loop.
+
+        Args:
+            message: The user's message text.
+        """
+        self._messages.append({"role": "user", "content": message})
+        await self._process_response()
+
+    def reset(self) -> None:
+        """Clear conversation history (called between daemon sessions)."""
+        self._messages.clear()
 
     async def _process_response(self) -> None:
         """Send messages to Claude and handle the response.

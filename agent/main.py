@@ -48,13 +48,13 @@ def _asyncssh_available() -> bool:
     return result.returncode == 0
 
 
-def _build_agent(config_path: str):
-    """Build all agent components from config.
+def _build_core(config_path: str):
+    """Build the core agent components (config, inventory, registry, prompt).
 
     Returns:
-        Tuple of (ConversationClient, AuditLogger).
+        Tuple of (AgentConfig, ServersConfig, Inventory, ToolRegistry,
+        system_prompt_str, AuditLogger).
     """
-    from agent.client import ConversationClient
     from agent.inventory import Inventory
     from agent.prompts import build_system_prompt
     from agent.security.audit import AuditLogger
@@ -65,7 +65,6 @@ def _build_agent(config_path: str):
     from agent.tools.registry import ToolRegistry
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
-    from agent.ui.terminal import TerminalUI
 
     agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
     inventory = Inventory(servers_cfg, permissions_cfg)
@@ -90,14 +89,24 @@ def _build_agent(config_path: str):
     else:
         logger.warning("ssh_tools_unavailable", msg="SSH tools disabled (asyncssh not available)")
 
-    # Build system prompt and UI
     system_prompt = build_system_prompt(inventory, registry)
+
+    return agent_cfg, servers_cfg, inventory, registry, system_prompt, audit
+
+
+def _build_agent(config_path: str):
+    """Build all agent components for interactive mode.
+
+    Returns:
+        Tuple of (ConversationClient, AuditLogger).
+    """
+    from agent.client import ConversationClient
+    from agent.ui.terminal import TerminalUI
+
+    agent_cfg, servers_cfg, _inv, registry, system_prompt, audit = _build_core(config_path)
+
     ui = TerminalUI()
-
-    # Show banner
     ui.display_banner(__version__, agent_cfg.model, list(servers_cfg.servers.keys()))
-
-    # Build conversation client
     client = ConversationClient(agent_cfg, registry, system_prompt, ui)
 
     return client, audit
@@ -183,6 +192,234 @@ def check_config(config_dir: str | None) -> None:
         click.echo(f"    - {name} ({server.role}): {server.host}")
     click.echo(f"  Roles with permissions: {', '.join(permissions_cfg.roles.keys())}")
     click.echo(f"  Approval patterns: {len(permissions_cfg.approval_required_patterns)}")
+
+
+@cli.command()
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to configuration directory.",
+)
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+    default=None,
+    help="Logging level.",
+)
+@click.option(
+    "--socket",
+    "socket_path",
+    type=click.Path(),
+    default=None,
+    help="Unix socket path. Defaults to config value or /run/bastion-agent/agent.sock.",
+)
+def daemon(config_dir: str | None, log_level: str | None, socket_path: str | None) -> None:
+    """Start the agent as a persistent daemon listening on a Unix socket.
+
+    In daemon mode the agent waits for client connections on a Unix
+    domain socket instead of reading from stdin.  Each connected client
+    gets an independent conversation session.  Destructive operations
+    are auto-denied (no interactive terminal for approval prompts).
+
+    Use ``bastion-agent send`` to talk to the running daemon.
+    """
+    config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
+    level = log_level or os.environ.get("BASTION_AGENT_LOG_LEVEL", "INFO")
+
+    _configure_logging(level)
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        click.echo("Error: ANTHROPIC_API_KEY environment variable is not set.", err=True)
+        sys.exit(1)
+
+    try:
+        agent_cfg, servers_cfg, _inv, registry, system_prompt, audit = _build_core(config_path)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Startup error: {e}", err=True)
+        logger.exception("startup_failed")
+        sys.exit(1)
+
+    # Force auto_deny in daemon mode — no terminal for approval prompts
+    agent_cfg = agent_cfg.model_copy(update={"approval_mode": "auto_deny"})
+
+    sock = socket_path or agent_cfg.socket_path
+    asyncio.run(_run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, sock))
+
+
+async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, socket_path: str):
+    """Async entry point for daemon mode."""
+    import signal
+
+    from agent.client import ConversationClient
+    from agent.ui.daemon import DaemonUI
+
+    ui = DaemonUI(socket_path)
+    await ui.start()
+    client = ConversationClient(agent_cfg, registry, system_prompt, ui)
+
+    server_names = list(servers_cfg.servers.keys())
+    logger.info(
+        "daemon_started",
+        model=agent_cfg.model,
+        servers=server_names,
+        socket=socket_path,
+    )
+
+    # Graceful shutdown on SIGTERM / SIGINT
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, lambda: asyncio.ensure_future(ui.stop()))
+
+    # Session loop — one iteration per client connection
+    while True:
+        got_client = await ui.wait_for_client()
+        if not got_client:
+            break  # Shutting down
+
+        audit.log_session_start()
+        ui.display_banner(__version__, agent_cfg.model, server_names)
+        try:
+            while True:
+                message = await ui.get_input()
+                if message is None:
+                    break  # Client disconnected
+                if message in ("/quit", "/exit"):
+                    ui.display_goodbye()
+                    break
+                if not message:
+                    continue
+                await client.process_message(message)
+                ui.display_done()
+                await ui.flush()
+        except Exception:
+            logger.exception("session_error")
+        finally:
+            ui.display_goodbye()
+            await ui.flush()
+            client.reset()
+            audit.log_session_end()
+
+    await ui.stop()
+    audit.close()
+    logger.info("daemon_exited")
+
+
+@cli.command()
+@click.argument("message", required=False)
+@click.option(
+    "--socket",
+    "socket_path",
+    type=click.Path(),
+    default="/run/bastion-agent/agent.sock",
+    help="Unix socket path of the running daemon.",
+)
+@click.option(
+    "--interactive", "-i",
+    is_flag=True,
+    default=False,
+    help="Stay connected for a multi-turn conversation.",
+)
+def send(message: str | None, socket_path: str, interactive: bool) -> None:
+    """Send a message to the running daemon and display the response.
+
+    Examples:
+
+      bastion-agent send "check disk space on gameserver-01"
+
+      bastion-agent send -i   # interactive session
+    """
+    import json as _json
+
+    if not message and not interactive:
+        click.echo("Error: provide a message or use --interactive / -i", err=True)
+        sys.exit(1)
+
+    try:
+        asyncio.run(_send_message(socket_path, message, interactive))
+    except FileNotFoundError:
+        click.echo(f"Error: socket not found at {socket_path}. Is the daemon running?", err=True)
+        sys.exit(1)
+    except ConnectionRefusedError:
+        click.echo("Error: connection refused. Is the daemon running?", err=True)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo("\nDisconnected.")
+
+
+async def _send_message(socket_path: str, message: str | None, interactive: bool) -> None:
+    """Connect to the daemon and exchange messages."""
+    import json as _json
+
+    reader, writer = await asyncio.open_unix_connection(socket_path)
+
+    async def _read_events() -> None:
+        """Read and display events until a 'done' or 'goodbye' event."""
+        while True:
+            line = await reader.readline()
+            if not line:
+                return
+            try:
+                event = _json.loads(line.decode().strip())
+            except _json.JSONDecodeError:
+                continue
+
+            etype = event.get("type", "")
+            if etype == "response":
+                click.echo(event.get("text", ""))
+            elif etype == "tool_call":
+                tool = event.get("tool", "?")
+                inp = event.get("input", {})
+                parts = [f"{k}={v}" for k, v in inp.items() if isinstance(v, (str, int, bool))]
+                click.echo(f"  > {tool}  {' '.join(parts)}", err=True)
+            elif etype == "tool_result":
+                result = event.get("result", {})
+                out = result.get("output", "")
+                err = result.get("error", "")
+                if out:
+                    click.echo(out, err=True)
+                if err and not out:
+                    click.echo(f"  error: {err}", err=True)
+            elif etype == "error":
+                click.echo(f"Error: {event.get('text', '')}", err=True)
+            elif etype in ("goodbye", "done"):
+                return
+            elif etype == "banner":
+                continue  # Suppress banner in send mode
+            elif etype == "info":
+                click.echo(event.get("text", ""), err=True)
+
+    async def _send(msg: str) -> None:
+        payload = _json.dumps({"message": msg}) + "\n"
+        writer.write(payload.encode())
+        await writer.drain()
+
+    try:
+        if message:
+            await _send(message)
+            await _read_events()
+
+        if interactive:
+            while True:
+                try:
+                    loop = asyncio.get_running_loop()
+                    raw = await loop.run_in_executor(None, lambda: input("[bastion] > "))
+                    text = raw.strip()
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if not text:
+                    continue
+                if text in ("/quit", "/exit"):
+                    await _send(text)
+                    await _read_events()
+                    break
+                await _send(text)
+                await _read_events()
+    finally:
+        writer.close()
 
 
 if __name__ == "__main__":
