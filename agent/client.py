@@ -32,6 +32,10 @@ _RATE_LIMIT_BASE_DELAY = 2.0  # seconds
 _CHARS_PER_TOKEN = 3.5
 
 
+class CancelledByUser(Exception):
+    """Raised when the user cancels the current operation."""
+
+
 class ConversationClient:
     """Manages the conversation loop between the user, Claude, and tools."""
 
@@ -58,6 +62,7 @@ class ConversationClient:
         self._ui = ui
         self._client = anthropic.Anthropic()
         self._messages: list[dict[str, Any]] = []
+        self._cancel_event: asyncio.Event | None = None
 
     async def run(self) -> None:
         """Run the interactive conversation loop.
@@ -108,20 +113,40 @@ class ConversationClient:
         self._messages.clear()
         self._messages.extend(messages)
 
+    def set_cancel_event(self, event: asyncio.Event) -> None:
+        """Set an external cancellation event.
+
+        When this event is set, the conversation loop will stop after the
+        current API call or tool execution completes.
+        """
+        self._cancel_event = event
+
+    def _is_cancelled(self) -> bool:
+        """Check if the current operation has been cancelled."""
+        return self._cancel_event is not None and self._cancel_event.is_set()
+
     async def _process_response(self) -> None:
         """Send messages to Claude and handle the response.
 
         Loops through tool_use rounds until Claude produces a final
         text response (stop_reason == "end_turn"), respecting the
-        max_tool_iterations safety limit.
+        max_tool_iterations safety limit.  Checks for cancellation
+        between each iteration.
         """
         iterations = 0
 
         while iterations < self._config.max_tool_iterations:
             iterations += 1
 
+            # Check for cancellation before each round
+            if self._is_cancelled():
+                logger.info("operation_cancelled", iteration=iterations)
+                raise CancelledByUser()
+
             try:
                 response = await self._api_call_with_retry()
+            except CancelledByUser:
+                raise
             except anthropic.APIError as e:
                 self._ui.display_error(f"API error: {e}")
                 logger.error("api_error", error=str(e))
@@ -151,6 +176,16 @@ class ConversationClient:
             tool_results: list[dict[str, Any]] = []
             for block in assistant_content:
                 if block.type == "tool_use":
+                    # Check cancellation before each tool execution
+                    if self._is_cancelled():
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": "Operation cancelled by user.",
+                            "is_error": True,
+                        })
+                        continue
+
                     self._ui.display_tool_call(block.name, block.input)
                     result = await self._registry.dispatch(block.name, block.input)
                     self._ui.display_tool_result(block.name, result)
@@ -162,6 +197,12 @@ class ConversationClient:
                 elif hasattr(block, "text") and block.text:
                     # Claude may include thinking text alongside tool calls
                     self._ui.display_response(block.text)
+
+            # If cancelled during tool execution, stop the loop
+            if self._is_cancelled():
+                # Still append the partial results so history stays valid
+                self._messages.append({"role": "user", "content": tool_results})
+                raise CancelledByUser()
 
             # Append tool results for the next iteration
             self._messages.append({"role": "user", "content": tool_results})
@@ -215,17 +256,44 @@ class ConversationClient:
             )
 
     async def _api_call_with_retry(self) -> anthropic.types.Message:
-        """Call the Anthropic API with retry on rate limit errors."""
+        """Call the Anthropic API with retry on rate limit errors.
+
+        The synchronous Anthropic SDK call is run in a thread executor so
+        the asyncio event loop stays responsive — this allows the daemon
+        to detect client disconnection (cancel) while waiting for the API.
+        """
         self._trim_history()
+        loop = asyncio.get_running_loop()
+
+        def _sync_create() -> anthropic.types.Message:
+            return self._client.messages.create(
+                model=self._config.model,
+                max_tokens=self._config.max_tokens,
+                system=self._system_prompt,
+                tools=self._registry.get_schemas(),
+                messages=self._messages,
+            )
+
         for attempt in range(_RATE_LIMIT_MAX_RETRIES + 1):
             try:
-                return self._client.messages.create(
-                    model=self._config.model,
-                    max_tokens=self._config.max_tokens,
-                    system=self._system_prompt,
-                    tools=self._registry.get_schemas(),
-                    messages=self._messages,
-                )
+                api_future = loop.run_in_executor(None, _sync_create)
+
+                # Race the API call against the cancel event (if set)
+                if self._cancel_event is not None:
+                    cancel_future = asyncio.ensure_future(self._cancel_event.wait())
+                    done, pending = await asyncio.wait(
+                        {asyncio.ensure_future(api_future), cancel_future},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for p in pending:
+                        p.cancel()
+                    if self._cancel_event.is_set():
+                        raise CancelledByUser()
+                    return done.pop().result()
+                else:
+                    return await api_future
+            except CancelledByUser:
+                raise
             except anthropic.RateLimitError:
                 if attempt >= _RATE_LIMIT_MAX_RETRIES:
                     raise

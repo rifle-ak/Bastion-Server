@@ -254,13 +254,14 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
     """Async entry point for daemon mode."""
     import signal
 
-    from agent.client import ConversationClient
+    from agent.client import CancelledByUser, ConversationClient
     from agent.sessions import SessionStore
     from agent.ui.daemon import DaemonUI
 
     ui = DaemonUI(socket_path)
     await ui.start()
     client = ConversationClient(agent_cfg, registry, system_prompt, ui)
+    client.set_cancel_event(ui.cancelled_event)
     store = SessionStore(agent_cfg.sessions_dir)
 
     server_names = list(servers_cfg.servers.keys())
@@ -275,6 +276,22 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, lambda: asyncio.ensure_future(ui.stop()))
+
+    async def _process_with_cancel(message: str) -> bool:
+        """Process a message with cancellation support.
+
+        Returns True if completed normally, False if cancelled.
+        """
+        ui.start_processing()
+        try:
+            await client.process_message(message)
+            return True
+        except CancelledByUser:
+            logger.info("operation_cancelled_by_user")
+            ui.display_cancelled()
+            return False
+        finally:
+            ui.stop_processing()
 
     # Session loop — one iteration per client connection
     while True:
@@ -308,7 +325,7 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
 
             # Process the first message (even on resume, the client sends a real message)
             if first_message and first_message not in ("/quit", "/exit"):
-                await client.process_message(first_message)
+                await _process_with_cancel(first_message)
                 store.save(session_id, client.get_messages(), created_at=created_at)
                 ui.display_done()
                 await ui.flush()
@@ -326,7 +343,7 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
                     break
                 if not message:
                     continue
-                await client.process_message(message)
+                await _process_with_cancel(message)
                 store.save(session_id, client.get_messages(), created_at=created_at)
                 ui.display_done()
                 await ui.flush()
@@ -459,11 +476,26 @@ async def _send_message(
 ) -> None:
     """Connect to the daemon and exchange messages."""
     import json as _json
+    import signal
 
     reader, writer = await asyncio.open_unix_connection(socket_path)
+    _cancel_sent = False
+
+    async def _send_cancel() -> None:
+        """Send a cancel signal to the daemon."""
+        nonlocal _cancel_sent
+        if _cancel_sent:
+            return
+        _cancel_sent = True
+        try:
+            cancel_msg = _json.dumps({"type": "cancel"}) + "\n"
+            writer.write(cancel_msg.encode())
+            await writer.drain()
+        except (ConnectionError, OSError):
+            pass
 
     async def _read_events() -> None:
-        """Read and display events until a 'done' or 'goodbye' event."""
+        """Read and display events until a 'done', 'cancelled', or 'goodbye' event."""
         while True:
             line = await reader.readline()
             if not line:
@@ -499,6 +531,9 @@ async def _send_message(
                     err = result.get("error", "")
                     if err:
                         click.echo(f"  error: {err}", err=True)
+            elif etype == "cancelled":
+                click.echo("Cancelled.", err=True)
+                return
             elif etype == "error":
                 click.echo(f"Error: {event.get('text', '')}", err=True)
             elif etype in ("goodbye", "done"):
@@ -516,16 +551,34 @@ async def _send_message(
         writer.write(payload.encode())
         await writer.drain()
 
+    # Register Ctrl-C handler to send cancel before disconnecting
+    loop = asyncio.get_running_loop()
+    _interrupted = False
+
+    def _on_sigint() -> None:
+        nonlocal _interrupted
+        if _interrupted:
+            # Second Ctrl-C — force exit
+            writer.close()
+            return
+        _interrupted = True
+        click.echo("\nCancelling... (press Ctrl-C again to force quit)", err=True)
+        asyncio.ensure_future(_send_cancel())
+
+    try:
+        loop.add_signal_handler(signal.SIGINT, _on_sigint)
+    except NotImplementedError:
+        pass  # Windows fallback — Ctrl-C will just raise KeyboardInterrupt
+
     try:
         if message:
             extra = {"resume": resume_id} if resume_id else None
             await _send(message, extra=extra)
             await _read_events()
 
-        if interactive:
+        if interactive and not _interrupted:
             while True:
                 try:
-                    loop = asyncio.get_running_loop()
                     raw = await loop.run_in_executor(None, lambda: input("[bastion] > "))
                     text = raw.strip()
                 except (EOFError, KeyboardInterrupt):
@@ -536,9 +589,15 @@ async def _send_message(
                     await _send(text)
                     await _read_events()
                     break
+                _interrupted = False
+                _cancel_sent = False
                 await _send(text)
                 await _read_events()
     finally:
+        try:
+            loop.remove_signal_handler(signal.SIGINT)
+        except (NotImplementedError, ValueError):
+            pass
         writer.close()
 
 

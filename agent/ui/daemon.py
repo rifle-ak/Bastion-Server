@@ -9,11 +9,13 @@ Wire protocol (newline-delimited JSON):
 
   Client -> Server:
     {"message": "check disk space on gameserver-01"}
+    {"type": "cancel"}
 
   Server -> Client:
     {"type": "tool_call", "tool": "run_remote_command", "input": {...}}
     {"type": "tool_result", "tool": "run_remote_command", "result": {...}}
     {"type": "response", "text": "The disk usage on gameserver-01 is..."}
+    {"type": "cancelled"}
     {"type": "done"}
 """
 
@@ -45,6 +47,8 @@ class DaemonUI:
         self._writer: asyncio.StreamWriter | None = None
         self._client_connected = asyncio.Event()
         self._shutdown = asyncio.Event()
+        self._cancelled = asyncio.Event()
+        self._monitor_task: asyncio.Task[None] | None = None
         self._last_metadata: dict[str, Any] = {}
 
     async def start(self) -> None:
@@ -104,6 +108,59 @@ class DaemonUI:
         logger.info("client_connected")
 
     @property
+    def cancelled_event(self) -> asyncio.Event:
+        """The cancellation event — set when the client disconnects or sends cancel."""
+        return self._cancelled
+
+    @property
+    def is_cancelled(self) -> bool:
+        """True if the current operation was cancelled by the client."""
+        return self._cancelled.is_set()
+
+    def start_processing(self) -> None:
+        """Start monitoring the client socket for disconnect or cancel.
+
+        Call before starting a long-running operation (API call / tool
+        execution).  While the daemon processes a message it does NOT
+        call ``get_input()``, so this background task watches the reader
+        for client disconnect (EOF) or an explicit cancel message.
+        """
+        self._cancelled.clear()
+        if self._reader is not None:
+            self._monitor_task = asyncio.create_task(self._monitor_client())
+
+    def stop_processing(self) -> None:
+        """Stop the client-disconnect monitor."""
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+        self._monitor_task = None
+
+    async def _monitor_client(self) -> None:
+        """Background task: watch for client disconnect or cancel message."""
+        if self._reader is None:
+            return
+        try:
+            while not self._cancelled.is_set():
+                line = await self._reader.readline()
+                if not line:
+                    # EOF — client disconnected
+                    logger.info("client_disconnected_during_processing")
+                    self._cancelled.set()
+                    return
+                try:
+                    data = json.loads(line.decode().strip())
+                    if data.get("type") == "cancel":
+                        logger.info("cancel_requested_by_client")
+                        self._cancelled.set()
+                        return
+                except json.JSONDecodeError:
+                    continue
+        except (ConnectionError, OSError):
+            self._cancelled.set()
+        except asyncio.CancelledError:
+            pass  # Normal cleanup from stop_processing()
+
+    @property
     def last_metadata(self) -> dict[str, Any]:
         """Return metadata from the last parsed client message.
 
@@ -154,6 +211,8 @@ class DaemonUI:
 
     def _cleanup_client(self) -> None:
         """Clean up the current client connection."""
+        self._cancelled.set()  # Unblock anything waiting on cancel
+        self.stop_processing()
         writer = self._writer
         self._reader = None
         self._writer = None
@@ -194,6 +253,10 @@ class DaemonUI:
     def display_info(self, message: str) -> None:
         """Send an informational message to the client."""
         self._send_event({"type": "info", "text": message})
+
+    def display_cancelled(self) -> None:
+        """Send a cancellation acknowledgement to the client."""
+        self._send_event({"type": "cancelled", "text": "Operation cancelled."})
 
     def display_done(self) -> None:
         """Send a message-complete marker so the client knows the turn is over."""
