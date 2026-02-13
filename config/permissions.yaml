@@ -28,10 +28,12 @@ roles:
 
   game-server:
     allowed_commands:
+      # ── System health & diagnostics ──
       - "uptime"
       - "df -h"
       - "df -h *"
       - "free -h"
+      - "free -m"
       - "ps aux"
       - "ps aux *"
       - "top -bn1"
@@ -41,19 +43,46 @@ roles:
       - "iostat *"
       - "vmstat *"
       - "mpstat *"
+      - "w"
+      - "who"
+      - "last *"
+      - "last"
+      # ── Filesystem browsing ──
+      - "ls *"
+      - "ls"
+      - "du -sh *"
+      - "du -h *"
+      - "du -sh /var/lib/pterodactyl/*"
+      - "head -n * *"
+      # ── Networking ──
       - "ss *"
+      - "ss"
       - "ip addr"
       - "ip addr *"
       - "ip route"
       - "ip route *"
+      - "ip -s link"
+      - "ip -s link *"
       - "lsof *"
+      - "lsof -i *"
+      - "iptables -L"
+      - "iptables -L *"
+      - "iptables -S"
+      - "iptables -S *"
+      - "iptables -nL"
+      - "iptables -nL *"
+      - "nft list *"
+      # ── Systemd services ──
       - "systemctl status *"
       - "systemctl list-units *"
       - "systemctl is-active *"
+      - "systemctl show *"
+      - "systemctl cat *"
       - "journalctl -u * --no-pager -n *"
       - "journalctl -u * --no-pager -n * --since *"
       - "journalctl -u * --no-pager --since *"
-      # Docker: container listing, inspection, networking, volumes
+      - "journalctl --no-pager -n * -p *"
+      # ── Docker: container listing & inspection ──
       - "docker ps"
       - "docker ps *"
       - "docker logs *"
@@ -61,17 +90,22 @@ roles:
       - "docker stats --no-stream"
       - "docker stats --no-stream *"
       - "docker top *"
+      - "docker port *"
+      - "docker diff *"
+      - "docker images"
+      - "docker images *"
+      - "docker history *"
+      - "docker info"
+      - "docker system df"
+      - "docker system df *"
+      # ── Docker: networking & volumes ──
       - "docker network ls"
       - "docker network ls *"
       - "docker network inspect *"
       - "docker volume ls"
       - "docker volume ls *"
       - "docker volume inspect *"
-      - "docker port *"
-      - "docker diff *"
-      - "docker images"
-      - "docker images *"
-      # Read-only docker exec commands for container diagnostics
+      # ── Docker exec: read-only container diagnostics ──
       - "docker exec * ps *"
       - "docker exec * ps"
       - "docker exec * top *"
@@ -80,6 +114,7 @@ roles:
       - "docker exec * free *"
       - "docker exec * free"
       - "docker exec * uptime"
+      - "docker exec * date"
       - "docker exec * cat *"
       - "docker exec * head *"
       - "docker exec * tail *"
@@ -103,21 +138,43 @@ roles:
       - "docker exec * ip *"
       - "docker exec * netstat *"
       - "docker exec * lsof *"
-      # Pterodactyl Wings diagnostics
+      # ── Pterodactyl Wings CLI ──
       - "wings diagnostics"
       - "wings diagnostics *"
+      - "wings version"
+      # ── Pterodactyl: file reads (host-side paths) ──
       - "cat /etc/pterodactyl/*"
+      - "cat /var/log/pterodactyl/*"
+      - "cat /var/lib/pterodactyl/*"
       - "cat /srv/pterodactyl/*"
+      - "head -n * /var/log/pterodactyl/*"
+      - "head -n * /var/lib/pterodactyl/*"
+      - "tail -n * /var/log/pterodactyl/*"
+      - "tail -n * /var/lib/pterodactyl/*"
       - "tail -n * /srv/pterodactyl/*"
-      # Pterodactyl: send commands to game server console (REQUIRES APPROVAL)
+      - "ls -la /var/lib/pterodactyl/*"
+      - "ls -lah /var/lib/pterodactyl/*"
+      - "ls -la /etc/pterodactyl/*"
+      - "ls -la /srv/pterodactyl/*"
+      - "du -sh /var/lib/pterodactyl/volumes/*"
+      - "du -sh /var/lib/pterodactyl/backups/*"
+      - "find /var/lib/pterodactyl/* *"
+      # ── Pterodactyl RCON — send commands to game console (REQUIRES APPROVAL) ──
       - "docker exec * rcon *"
+      # ── Container management (REQUIRES APPROVAL) ──
       - "docker restart *"
+      - "docker start *"
+      - "docker stop *"
+      - "docker kill *"
       - "systemctl restart *"
+      - "systemctl stop *"
     allowed_paths_read:
       - /var/log/
+      - /var/log/pterodactyl/
       - /etc/pterodactyl/
       - /srv/pterodactyl/
       - /var/lib/pterodactyl/
+      - /tmp/pterodactyl/
     allowed_paths_write: []
 
   monitoring:
@@ -259,6 +316,7 @@ roles:
 approval_required_patterns:
   - "restart"
   - "stop"
+  - "start"
   - "kill"
   - "rm "
   - "remove"
@@ -269,3 +327,4 @@ approval_required_patterns:
   - "tee "
   - ">"
   - ">>"
+  - "rcon"
