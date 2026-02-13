@@ -7,6 +7,7 @@ Each server uses its own dedicated keypair from the inventory config.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 import asyncssh
@@ -16,6 +17,10 @@ from agent.inventory import Inventory, ServerInfo
 from agent.tools.base import BaseTool, ToolResult
 
 logger = structlog.get_logger()
+
+# Connection timeout (seconds). Fail fast if the host is unreachable
+# rather than eating the entire command_timeout on a TCP SYN hang.
+_CONNECT_TIMEOUT = 10
 
 
 async def run_remote_command(
@@ -34,26 +39,97 @@ async def run_remote_command(
         ToolResult with stdout, stderr, and exit code.
     """
     defn = server_info.definition
+    name = server_info.name
 
     if not defn.ssh:
         return ToolResult(
-            error=f"Server {server_info.name!r} does not use SSH (local execution only).",
+            error=f"Server {name!r} does not use SSH (local execution only).",
             exit_code=1,
         )
 
     if not defn.key_path:
         return ToolResult(
-            error=f"No SSH key configured for server {server_info.name!r}.",
+            error=f"No SSH key configured for server {name!r}.",
+            exit_code=1,
+        )
+
+    # Pre-flight: check the SSH key file actually exists
+    key_file = Path(defn.key_path)
+    if not key_file.exists():
+        return ToolResult(
+            error=(
+                f"SSH key not found: {defn.key_path}\n"
+                f"Generate keys: bastion-agent generate-ssh-keys, "
+                f"or check key_path in servers.yaml for {name!r}."
+            ),
             exit_code=1,
         )
 
     try:
-        async with asyncssh.connect(
-            defn.host,
-            username=defn.user,
-            client_keys=[defn.key_path],
-            known_hosts=defn.known_hosts_path,
-        ) as conn:
+        # Wrap connect() in its own timeout so we get a clear
+        # "cannot reach host" error instead of the generic dispatch
+        # timeout after 30s.
+        conn = await asyncio.wait_for(
+            asyncssh.connect(
+                defn.host,
+                username=defn.user,
+                client_keys=[defn.key_path],
+                known_hosts=defn.known_hosts_path,
+            ),
+            timeout=_CONNECT_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.error("ssh_connect_timeout", server=name, host=defn.host)
+        return ToolResult(
+            error=(
+                f"Cannot connect to {name} ({defn.host}:22) — connection timed out after {_CONNECT_TIMEOUT}s.\n"
+                f"Check: Is the IP correct in servers.yaml? Is SSH open on the target? "
+                f"Can the bastion reach it?"
+            ),
+            exit_code=1,
+        )
+    except asyncssh.PermissionDenied as e:
+        logger.error("ssh_permission_denied", server=name, error=str(e))
+        return ToolResult(
+            error=(
+                f"SSH permission denied on {name} ({defn.host}): {e}\n"
+                f"Check: Does user {defn.user!r} exist on {name}? "
+                f"Is the public key in ~{defn.user}/.ssh/authorized_keys?"
+            ),
+            exit_code=1,
+        )
+    except asyncssh.HostKeyNotVerifiable as e:
+        logger.error("ssh_host_key_rejected", server=name, error=str(e))
+        return ToolResult(
+            error=(
+                f"SSH host key not trusted for {name} ({defn.host}): {e}\n"
+                f"Fix: ssh-keyscan {defn.host} >> ~/.ssh/known_hosts  "
+                f"(as the claude-agent user), or set known_hosts_path in servers.yaml."
+            ),
+            exit_code=1,
+        )
+    except asyncssh.KeyImportError as e:
+        logger.error("ssh_key_error", server=name, error=str(e))
+        return ToolResult(
+            error=f"SSH key is invalid or corrupt ({defn.key_path}): {e}",
+            exit_code=1,
+        )
+    except asyncssh.DisconnectError as e:
+        logger.error("ssh_disconnect", server=name, error=str(e))
+        return ToolResult(error=f"SSH disconnected from {name}: {e}", exit_code=1)
+    except OSError as e:
+        logger.error("ssh_connection_failed", server=name, host=defn.host, error=str(e))
+        return ToolResult(
+            error=(
+                f"Cannot connect to {name} ({defn.host}): {e}\n"
+                f"Check: Is the IP correct? Is the server online? Is port 22 open?"
+            ),
+            exit_code=1,
+        )
+
+    # Connection succeeded — run the command
+    try:
+        async with conn:
             result = await asyncio.wait_for(
                 conn.run(command, check=False),
                 timeout=timeout,
@@ -63,17 +139,11 @@ async def run_remote_command(
                 error=(result.stderr or "").rstrip(),
                 exit_code=result.exit_status or 0,
             )
-    except asyncssh.DisconnectError as e:
-        logger.error("ssh_disconnect", server=server_info.name, error=str(e))
-        return ToolResult(error=f"SSH disconnected: {e}", exit_code=1)
-    except asyncssh.PermissionDenied as e:
-        logger.error("ssh_permission_denied", server=server_info.name, error=str(e))
-        return ToolResult(error=f"SSH permission denied: {e}", exit_code=1)
-    except OSError as e:
-        logger.error("ssh_connection_failed", server=server_info.name, error=str(e))
-        return ToolResult(error=f"SSH connection failed: {e}", exit_code=1)
     except asyncio.TimeoutError:
-        return ToolResult(error=f"Command timed out after {timeout}s", exit_code=1)
+        return ToolResult(
+            error=f"Command timed out after {timeout}s on {name}",
+            exit_code=1,
+        )
 
 
 class RunRemoteCommand(BaseTool):
