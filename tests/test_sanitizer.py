@@ -68,6 +68,19 @@ class TestCheckCommand:
         with pytest.raises(SanitizationError, match="eval/exec"):
             check_command("exec /bin/sh")
 
+    def test_docker_exec_allowed(self) -> None:
+        """'docker exec' is a legitimate Docker command, not a shell builtin."""
+        check_command("docker exec my-container ps aux")  # should not raise
+
+    def test_docker_exec_with_flags_allowed(self) -> None:
+        """'docker exec' with flags like -it should pass."""
+        check_command("docker exec -it my-container top -bn1")  # should not raise
+
+    def test_standalone_exec_still_rejected(self) -> None:
+        """Standalone 'exec' (shell builtin) must still be blocked."""
+        with pytest.raises(SanitizationError, match="eval/exec"):
+            check_command("exec bash")
+
     def test_newline_injection_rejected(self) -> None:
         with pytest.raises(SanitizationError, match="newline"):
             check_command("uptime\nrm -rf /")
@@ -187,3 +200,9 @@ class TestSanitize:
     def test_clean_since_passes(self) -> None:
         result = sanitize("service_journal", {"since": "1h", "service": "nginx"})
         assert result["since"] == "1h"
+
+    def test_docker_exec_command_passes(self) -> None:
+        """docker exec commands should pass sanitization."""
+        inp = {"command": "docker exec b0d9d556efb3 ps aux", "server": "gameserver-01"}
+        result = sanitize("run_remote_command", inp)
+        assert result is inp

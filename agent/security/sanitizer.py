@@ -21,7 +21,7 @@ FORBIDDEN_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r'\.\.'),             # Path traversal
     re.compile(r'>\s*/'),            # Redirect to absolute path
     re.compile(r'>>\s*/'),           # Append to absolute path
-    re.compile(r'\b(eval|exec)\b'),  # Code execution keywords
+    re.compile(r'\beval\b|(?<!docker )\bexec\b'),  # Code execution keywords (exec allowed after 'docker')
     re.compile(r'[\n\r\x00]'),       # Newline/carriage-return/null-byte injection
 ]
 
