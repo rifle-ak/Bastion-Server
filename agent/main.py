@@ -444,6 +444,9 @@ def send(
     except ConnectionRefusedError:
         click.echo("Error: connection refused. Is the daemon running?", err=True)
         sys.exit(1)
+    except ConnectionResetError:
+        click.echo("Error: connection reset by daemon. Try: bastion restart", err=True)
+        sys.exit(1)
     except KeyboardInterrupt:
         click.echo("\nDisconnected.")
 
@@ -497,7 +500,11 @@ async def _send_message(
     async def _read_events() -> None:
         """Read and display events until a 'done', 'cancelled', or 'goodbye' event."""
         while True:
-            line = await reader.readline()
+            try:
+                line = await reader.readline()
+            except (ConnectionError, OSError):
+                click.echo("Connection lost.", err=True)
+                return
             if not line:
                 return
             try:
