@@ -36,6 +36,7 @@ class AgentConfig(BaseModel):
         description="Approximate input token budget. Oldest messages are "
         "dropped when the conversation exceeds this limit.",
     )
+    sessions_dir: str = "./sessions"
 
 
 class RolePermissions(BaseModel):

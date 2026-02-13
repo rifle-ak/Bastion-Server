@@ -255,11 +255,13 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
     import signal
 
     from agent.client import ConversationClient
+    from agent.sessions import SessionStore
     from agent.ui.daemon import DaemonUI
 
     ui = DaemonUI(socket_path)
     await ui.start()
     client = ConversationClient(agent_cfg, registry, system_prompt, ui)
+    store = SessionStore(agent_cfg.sessions_dir)
 
     server_names = list(servers_cfg.servers.keys())
     logger.info(
@@ -282,7 +284,39 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
 
         audit.log_session_start()
         ui.display_banner(__version__, agent_cfg.model, server_names)
+
+        session_id = store.create_id()
+        created_at: float | None = None
+
         try:
+            # Check if the first message requests a session resume
+            first_message = await ui.get_input()
+            if first_message is None:
+                continue  # Client disconnected immediately
+
+            meta = ui.last_metadata
+            resume_id = meta.get("resume")
+            if resume_id:
+                try:
+                    messages, created_at = store.load(resume_id)
+                    client.restore_messages(messages)
+                    session_id = resume_id
+                    ui.display_info(f"Resumed session {session_id} ({len(messages)} messages)")
+                    logger.info("session_resumed", session_id=session_id)
+                except FileNotFoundError:
+                    ui.display_error(f"Session {resume_id} not found")
+
+            # Process the first message (even on resume, the client sends a real message)
+            if first_message and first_message not in ("/quit", "/exit"):
+                await client.process_message(first_message)
+                store.save(session_id, client.get_messages(), created_at=created_at)
+                ui.display_done()
+                await ui.flush()
+            elif first_message in ("/quit", "/exit"):
+                ui.display_goodbye()
+                continue
+
+            # Continue processing subsequent messages
             while True:
                 message = await ui.get_input()
                 if message is None:
@@ -293,11 +327,16 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
                 if not message:
                     continue
                 await client.process_message(message)
+                store.save(session_id, client.get_messages(), created_at=created_at)
                 ui.display_done()
                 await ui.flush()
         except Exception:
             logger.exception("session_error")
         finally:
+            # Save final state before cleanup
+            if client.get_messages():
+                store.save(session_id, client.get_messages(), created_at=created_at)
+                ui.display_info(f"Session saved: {session_id}")
             ui.display_goodbye()
             await ui.flush()
             client.reset()
@@ -323,23 +362,65 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
     default=False,
     help="Stay connected for a multi-turn conversation.",
 )
-def send(message: str | None, socket_path: str, interactive: bool) -> None:
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    default=False,
+    help="Show full tool call details and results (default: compact).",
+)
+@click.option(
+    "--resume", "-r",
+    "resume_id",
+    type=str,
+    default=None,
+    help="Resume a previous session by ID.",
+)
+@click.option(
+    "--sessions",
+    "list_sessions",
+    is_flag=True,
+    default=False,
+    help="List saved sessions and exit.",
+)
+@click.option(
+    "--sessions-dir",
+    type=click.Path(),
+    default="./sessions",
+    help="Directory for saved sessions (only used with --sessions).",
+)
+def send(
+    message: str | None,
+    socket_path: str,
+    interactive: bool,
+    verbose: bool,
+    resume_id: str | None,
+    list_sessions: bool,
+    sessions_dir: str,
+) -> None:
     """Send a message to the running daemon and display the response.
 
     Examples:
 
       bastion-agent send "check disk space on gameserver-01"
 
+      bastion-agent send -v "check disk space"  # verbose output
+
       bastion-agent send -i   # interactive session
+
+      bastion-agent send --sessions  # list saved sessions
+
+      bastion-agent send -r abc123def456 "follow up question"  # resume
     """
-    import json as _json
+    if list_sessions:
+        _show_sessions(sessions_dir)
+        return
 
     if not message and not interactive:
         click.echo("Error: provide a message or use --interactive / -i", err=True)
         sys.exit(1)
 
     try:
-        asyncio.run(_send_message(socket_path, message, interactive))
+        asyncio.run(_send_message(socket_path, message, interactive, verbose, resume_id))
     except FileNotFoundError:
         click.echo(f"Error: socket not found at {socket_path}. Is the daemon running?", err=True)
         sys.exit(1)
@@ -350,7 +431,32 @@ def send(message: str | None, socket_path: str, interactive: bool) -> None:
         click.echo("\nDisconnected.")
 
 
-async def _send_message(socket_path: str, message: str | None, interactive: bool) -> None:
+def _show_sessions(sessions_dir: str) -> None:
+    """Display saved sessions in a table."""
+    from datetime import datetime
+
+    from agent.sessions import SessionStore
+
+    store = SessionStore(sessions_dir)
+    sessions = store.list_sessions()
+    if not sessions:
+        click.echo("No saved sessions.")
+        return
+
+    click.echo(f"{'ID':<14} {'Updated':<20} {'Turns':<6} {'Preview'}")
+    click.echo("-" * 80)
+    for s in sessions:
+        updated = datetime.fromtimestamp(s.updated_at).strftime("%Y-%m-%d %H:%M")
+        click.echo(f"{s.session_id:<14} {updated:<20} {s.turns:<6} {s.preview}")
+
+
+async def _send_message(
+    socket_path: str,
+    message: str | None,
+    interactive: bool,
+    verbose: bool = False,
+    resume_id: str | None = None,
+) -> None:
     """Connect to the daemon and exchange messages."""
     import json as _json
 
@@ -372,17 +478,27 @@ async def _send_message(socket_path: str, message: str | None, interactive: bool
                 click.echo(event.get("text", ""))
             elif etype == "tool_call":
                 tool = event.get("tool", "?")
-                inp = event.get("input", {})
-                parts = [f"{k}={v}" for k, v in inp.items() if isinstance(v, (str, int, bool))]
-                click.echo(f"  > {tool}  {' '.join(parts)}", err=True)
+                if verbose:
+                    inp = event.get("input", {})
+                    parts = [f"{k}={v}" for k, v in inp.items() if isinstance(v, (str, int, bool))]
+                    click.echo(f"  > {tool}  {' '.join(parts)}", err=True)
+                else:
+                    click.echo(f"  [{tool}]", err=True)
             elif etype == "tool_result":
-                result = event.get("result", {})
-                out = result.get("output", "")
-                err = result.get("error", "")
-                if out:
-                    click.echo(out, err=True)
-                if err and not out:
-                    click.echo(f"  error: {err}", err=True)
+                if verbose:
+                    result = event.get("result", {})
+                    out = result.get("output", "")
+                    err = result.get("error", "")
+                    if out:
+                        click.echo(out, err=True)
+                    if err and not out:
+                        click.echo(f"  error: {err}", err=True)
+                else:
+                    # Compact: only show errors, suppress normal output
+                    result = event.get("result", {})
+                    err = result.get("error", "")
+                    if err:
+                        click.echo(f"  error: {err}", err=True)
             elif etype == "error":
                 click.echo(f"Error: {event.get('text', '')}", err=True)
             elif etype in ("goodbye", "done"):
@@ -392,14 +508,18 @@ async def _send_message(socket_path: str, message: str | None, interactive: bool
             elif etype == "info":
                 click.echo(event.get("text", ""), err=True)
 
-    async def _send(msg: str) -> None:
-        payload = _json.dumps({"message": msg}) + "\n"
+    async def _send(msg: str, extra: dict | None = None) -> None:
+        payload_dict = {"message": msg}
+        if extra:
+            payload_dict.update(extra)
+        payload = _json.dumps(payload_dict) + "\n"
         writer.write(payload.encode())
         await writer.drain()
 
     try:
         if message:
-            await _send(message)
+            extra = {"resume": resume_id} if resume_id else None
+            await _send(message, extra=extra)
             await _read_events()
 
         if interactive:
