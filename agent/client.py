@@ -27,6 +27,10 @@ _MAX_TOOL_RESULT_CHARS = 3000
 _RATE_LIMIT_MAX_RETRIES = 3
 _RATE_LIMIT_BASE_DELAY = 2.0  # seconds
 
+# Rough chars-per-token ratio for estimating token counts.
+# English text averages ~4 chars/token; JSON/code is closer to 3.
+_CHARS_PER_TOKEN = 3.5
+
 
 class ConversationClient:
     """Manages the conversation loop between the user, Claude, and tools."""
@@ -157,8 +161,50 @@ class ConversationClient:
         )
         logger.warning("max_tool_iterations_reached", limit=self._config.max_tool_iterations)
 
+    def _trim_history(self) -> None:
+        """Drop oldest message pairs when the conversation exceeds the token budget.
+
+        Preserves the most recent messages so Claude keeps context for the
+        current task.  Always keeps at least the last user message + the
+        preceding assistant turn (if any) so the current exchange is intact.
+
+        Messages must be dropped in valid pairs to keep the alternating
+        user/assistant structure the API requires:
+        - user (text) + assistant
+        - user (tool_results) + assistant
+        """
+        budget = self._config.max_conversation_tokens
+        est = _estimate_tokens(self._messages)
+        if est <= budget:
+            return
+
+        # Keep removing the oldest pair until we're under budget.
+        # Never remove the last 2 messages (current turn).
+        removed = 0
+        while est > budget and len(self._messages) > 2:
+            # Remove from the front: one user + one assistant = 2 messages
+            if len(self._messages) <= 2:
+                break
+            self._messages.pop(0)
+            removed += 1
+            # If the new front is an assistant message, remove it too
+            # to keep user/assistant alternation valid
+            if self._messages and self._messages[0].get("role") == "assistant":
+                self._messages.pop(0)
+                removed += 1
+            est = _estimate_tokens(self._messages)
+
+        if removed:
+            logger.info(
+                "history_trimmed",
+                removed_messages=removed,
+                remaining=len(self._messages),
+                est_tokens=est,
+            )
+
     async def _api_call_with_retry(self) -> anthropic.types.Message:
         """Call the Anthropic API with retry on rate limit errors."""
+        self._trim_history()
         for attempt in range(_RATE_LIMIT_MAX_RETRIES + 1):
             try:
                 return self._client.messages.create(
@@ -200,3 +246,24 @@ def _truncate_tool_result(content: str) -> str:
         + f"\n\n... ({len(content) - _MAX_TOOL_RESULT_CHARS} chars truncated) ...\n\n"
         + content[-half:]
     )
+
+
+def _estimate_tokens(messages: list[dict[str, Any]]) -> int:
+    """Rough token estimate for a message list.
+
+    Counts total characters across all message content and divides by the
+    average chars-per-token ratio.  Not exact, but good enough for
+    deciding when to trim.
+    """
+    total_chars = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            total_chars += len(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    total_chars += len(json.dumps(block, default=str))
+                elif isinstance(block, str):
+                    total_chars += len(block)
+    return int(total_chars / _CHARS_PER_TOKEN)

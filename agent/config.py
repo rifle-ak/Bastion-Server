@@ -31,6 +31,11 @@ class AgentConfig(BaseModel):
     audit_log_path: str = "./logs/audit.jsonl"
     approval_mode: ApprovalMode = ApprovalMode.INTERACTIVE
     socket_path: str = "/run/bastion-agent/agent.sock"
+    max_conversation_tokens: int = Field(
+        default=25000, ge=1000, le=200000,
+        description="Approximate input token budget. Oldest messages are "
+        "dropped when the conversation exceeds this limit.",
+    )
 
 
 class RolePermissions(BaseModel):

@@ -8,8 +8,6 @@ Type=simple
 User=claude-agent
 Group=claude-agent
 WorkingDirectory=/opt/bastion-agent
-ExecStartPre=/bin/mkdir -p /run/bastion-agent
-ExecStartPre=/bin/chown claude-agent:claude-agent /run/bastion-agent
 ExecStart=/opt/bastion-agent/venv/bin/bastion-agent daemon --config-dir /opt/bastion-agent/config
 Restart=on-failure
 RestartSec=10
@@ -18,11 +16,14 @@ RestartSec=10
 EnvironmentFile=-/etc/bastion-agent/env
 Environment=BASTION_AGENT_LOG_LEVEL=INFO
 
+# Runtime directory — systemd creates /run/bastion-agent/ before exec
+RuntimeDirectory=bastion-agent
+
 # Security hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/log/bastion-agent /opt/bastion-agent/logs /run/bastion-agent
+ReadWritePaths=/var/log/bastion-agent /opt/bastion-agent/logs
 PrivateTmp=yes
 
 # Logging
