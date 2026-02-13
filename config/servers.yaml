@@ -7,17 +7,17 @@ servers:
     ssh: false
 
   gameserver-01:
-    host: 10.0.1.10
+    host: 188.64.33.62
     role: game-server
     user: claude-agent
     key_path: ~/.ssh/keys/gameserver-01_ed25519
     description: "Primary Rust game server - Pterodactyl Wings node"
     services:
-      - wings
+      - pterodactyl-wings
       - docker
 
   monitoring:
-    host: 10.0.1.20
+    host: 103.195.102.186
     role: monitoring
     user: claude-agent
     key_path: ~/.ssh/keys/monitoring_ed25519
@@ -26,23 +26,24 @@ servers:
       - victoriametrics
       - grafana
       - vmagent
-    metrics_url: http://10.0.1.20:8428
+    metrics_url: https://monitor.galaxyops.online
+    metrics_auth: "$BASTION_METRICS_AUTH"
 
   webhost-01:
-    host: 10.0.1.30
+    host: 209.222.101.44
     role: webhost
     user: claude-agent
     key_path: ~/.ssh/keys/webhost-01_ed25519
-    description: "Alma 9 cPanel/WHM web hosting server"
+    description: "GG Main with Shared01"
     services:
       - cpanel
       - httpd
-      - mysqld
+      - mysql
       - named
       - exim
 
   media-01:
-    host: 10.0.1.40
+    host: 24.129.90.46
     role: saltbox
     user: claude-agent
     key_path: ~/.ssh/keys/media-01_ed25519
