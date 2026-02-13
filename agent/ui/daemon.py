@@ -96,11 +96,40 @@ class DaemonUI:
     ) -> None:
         """Handle an incoming client connection."""
         if self._reader is not None:
-            error = json.dumps({"type": "error", "text": "Another session is active"}) + "\n"
-            writer.write(error.encode())
-            await writer.drain()
-            writer.close()
-            return
+            # Check if the existing client is actually still alive.
+            # A stale session can happen if the old client disconnected
+            # while the daemon was blocked (e.g. in a sync API call
+            # before the run_in_executor + monitor changes).
+            stale = False
+            if self._writer is None or self._writer.is_closing():
+                stale = True
+            elif self._reader.at_eof():
+                stale = True
+            else:
+                # Try a zero-byte probe write on the old writer.
+                # If the transport is dead, this sets an internal error
+                # state that we can detect via is_closing().
+                try:
+                    self._writer.write(b"")
+                    await self._writer.drain()
+                    if self._writer.is_closing():
+                        stale = True
+                except (ConnectionError, OSError):
+                    stale = True
+
+            if stale:
+                logger.info("stale_session_detected", msg="cleaning up dead client")
+                self._cleanup_client()
+            else:
+                # Genuinely active — reject with a clean terminal event
+                # so the new client's _read_events() exits normally.
+                error = json.dumps({"type": "error", "text": "Another session is active. Run: bastion restart"}) + "\n"
+                done = json.dumps({"type": "done"}) + "\n"
+                writer.write(error.encode())
+                writer.write(done.encode())
+                await writer.drain()
+                writer.close()
+                return
 
         self._reader = reader
         self._writer = writer
