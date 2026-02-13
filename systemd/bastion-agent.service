@@ -23,7 +23,7 @@ RuntimeDirectory=bastion-agent
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/log/bastion-agent /opt/bastion-agent/logs
+ReadWritePaths=/var/log/bastion-agent /opt/bastion-agent/logs /opt/bastion-agent/sessions
 PrivateTmp=yes
 
 # Logging

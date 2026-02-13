@@ -204,6 +204,11 @@ chown "${AGENT_USER}:${AGENT_USER}" "${LOG_DIR}"
 chmod 750 "${LOG_DIR}"
 step "Log directory: ${LOG_DIR}"
 
+# Create sessions directory
+mkdir -p "${INSTALL_DIR}/sessions"
+chown "${AGENT_USER}:${AGENT_USER}" "${INSTALL_DIR}/sessions"
+step "Sessions directory: ${INSTALL_DIR}/sessions"
+
 # Create env file for API key
 mkdir -p "${CONFIG_DIR}"
 if [ ! -f "${CONFIG_DIR}/env" ]; then
@@ -243,7 +248,7 @@ Type=simple
 User=${AGENT_USER}
 Group=${AGENT_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${VENV_DIR}/bin/bastion-agent run --config-dir ${CONFIG_DIR}
+ExecStart=${VENV_DIR}/bin/bastion-agent daemon --config-dir ${CONFIG_DIR}
 Restart=on-failure
 RestartSec=10
 
@@ -251,11 +256,14 @@ RestartSec=10
 EnvironmentFile=-${CONFIG_DIR}/env
 Environment=BASTION_AGENT_LOG_LEVEL=INFO
 
+# Runtime directory — systemd creates /run/bastion-agent/ before exec
+RuntimeDirectory=bastion-agent
+
 # Security hardening
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=${LOG_DIR} ${INSTALL_DIR}/logs
+ReadWritePaths=${LOG_DIR} ${INSTALL_DIR}/logs ${INSTALL_DIR}/sessions
 PrivateTmp=yes
 
 # Logging
@@ -369,10 +377,11 @@ echo ""
 echo -e "  ${CYAN}2.${RESET} Generate SSH keys for downstream servers:"
 echo -e "     ${DIM}cd ${INSTALL_DIR} && sudo bash scripts/generate-ssh-keys.sh${RESET}"
 echo ""
-echo -e "  ${CYAN}3.${RESET} Run interactively:"
-echo -e "     ${DIM}bastion${RESET}"
-echo ""
-echo -e "  ${CYAN}4.${RESET} Or enable as a service:"
+echo -e "  ${CYAN}3.${RESET} Enable the agent service:"
 echo -e "     ${DIM}sudo systemctl enable --now bastion-agent${RESET}"
-echo -e "     ${DIM}sudo journalctl -u bastion-agent -f${RESET}"
+echo ""
+echo -e "  ${CYAN}4.${RESET} Start using it:"
+echo -e "     ${DIM}bastion \"check disk space on all servers\"${RESET}"
+echo -e "     ${DIM}bastion -i${RESET}  ${DIM}(interactive session)${RESET}"
+echo -e "     ${DIM}bastion help${RESET}  ${DIM}(see all commands)${RESET}"
 echo ""
