@@ -36,15 +36,20 @@ class AuditLogger:
         )
 
     def log_session_start(self) -> None:
-        """Log that a new interactive session has started."""
+        """Log that a new session has started (interactive or daemon)."""
         import getpass
         import os
+
+        try:
+            tty = os.ttyname(0) if os.isatty(0) else "none"
+        except OSError:
+            tty = "none"
 
         self._logger.info(
             "session_start",
             user=getpass.getuser(),
             pid=os.getpid(),
-            tty=os.ttyname(0) if os.isatty(0) else "none",
+            tty=tty,
         )
 
     def log_session_end(self) -> None:

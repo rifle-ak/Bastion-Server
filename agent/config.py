@@ -30,6 +30,7 @@ class AgentConfig(BaseModel):
     command_timeout: int = Field(default=30, ge=1, le=300)
     audit_log_path: str = "./logs/audit.jsonl"
     approval_mode: ApprovalMode = ApprovalMode.INTERACTIVE
+    socket_path: str = "/run/bastion-agent/agent.sock"
 
 
 class RolePermissions(BaseModel):

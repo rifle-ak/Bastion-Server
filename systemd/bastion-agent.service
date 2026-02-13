@@ -8,7 +8,9 @@ Type=simple
 User=claude-agent
 Group=claude-agent
 WorkingDirectory=/opt/bastion-agent
-ExecStart=/opt/bastion-agent/venv/bin/bastion-agent run --config-dir /opt/bastion-agent/config
+ExecStartPre=/bin/mkdir -p /run/bastion-agent
+ExecStartPre=/bin/chown claude-agent:claude-agent /run/bastion-agent
+ExecStart=/opt/bastion-agent/venv/bin/bastion-agent daemon --config-dir /opt/bastion-agent/config
 Restart=on-failure
 RestartSec=10
 
@@ -20,7 +22,7 @@ Environment=BASTION_AGENT_LOG_LEVEL=INFO
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/log/bastion-agent /opt/bastion-agent/logs
+ReadWritePaths=/var/log/bastion-agent /opt/bastion-agent/logs /run/bastion-agent
 PrivateTmp=yes
 
 # Logging
