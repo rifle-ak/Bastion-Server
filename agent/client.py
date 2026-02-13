@@ -96,6 +96,18 @@ class ConversationClient:
         """Clear conversation history (called between daemon sessions)."""
         self._messages.clear()
 
+    def get_messages(self) -> list[dict[str, Any]]:
+        """Return a copy of the current message history."""
+        return list(self._messages)
+
+    def restore_messages(self, messages: list[dict[str, Any]]) -> None:
+        """Replace the message history with a previously saved one.
+
+        Used by the daemon to resume a session from disk.
+        """
+        self._messages.clear()
+        self._messages.extend(messages)
+
     async def _process_response(self) -> None:
         """Send messages to Claude and handle the response.
 

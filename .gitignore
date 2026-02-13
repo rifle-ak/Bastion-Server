@@ -23,6 +23,9 @@ env/
 logs/*.jsonl
 logs/*.log
 
+# Session data
+sessions/
+
 # Environment / secrets
 .env
 .env.*

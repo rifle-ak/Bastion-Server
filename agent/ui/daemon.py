@@ -45,6 +45,7 @@ class DaemonUI:
         self._writer: asyncio.StreamWriter | None = None
         self._client_connected = asyncio.Event()
         self._shutdown = asyncio.Event()
+        self._last_metadata: dict[str, Any] = {}
 
     async def start(self) -> None:
         """Start the Unix socket server."""
@@ -102,6 +103,15 @@ class DaemonUI:
         self._client_connected.set()
         logger.info("client_connected")
 
+    @property
+    def last_metadata(self) -> dict[str, Any]:
+        """Return metadata from the last parsed client message.
+
+        This includes any extra fields beyond ``message``, such as
+        ``resume`` for session resumption.
+        """
+        return dict(self._last_metadata)
+
     async def get_input(self) -> str | None:
         """Read the next message from the connected client.
 
@@ -118,6 +128,7 @@ class DaemonUI:
                 return None
 
             data = json.loads(line.decode().strip())
+            self._last_metadata = data
             return data.get("message", "").strip()
         except (json.JSONDecodeError, ConnectionError, OSError) as e:
             logger.warning("client_read_error", error=str(e))
