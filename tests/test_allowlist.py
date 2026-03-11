@@ -25,17 +25,54 @@ def bastion_perms() -> RolePermissions:
             "df -h",
             "free -h",
             "ps aux",
+            "ss *",
+            "ss -tulpn",
+            "netstat *",
+            "netstat -tulpn",
+            "lsof -i",
+            "lsof -i *",
+            "ip addr",
+            "ip addr *",
+            "ip route",
+            "ip route *",
+            "pgrep *",
+            "pkill *",
             "systemctl status *",
+            "systemctl list-units *",
+            "systemctl list-units --failed",
+            "systemctl is-active *",
             "journalctl -u * --no-pager -n *",
+            "journalctl -xe",
+            "journalctl -xe --no-pager",
+            "journalctl -xe --no-pager -n *",
             "docker ps",
+            "docker ps *",
             "docker logs *",
+            "docker inspect *",
+            "docker stats --no-stream",
+            "docker network ls",
+            "docker network ls *",
+            "docker network inspect *",
+            "docker volume ls",
+            "docker volume ls *",
+            "docker volume inspect *",
+            "docker images",
+            "docker images *",
+            "find /var/log *",
+            "find /etc *",
+            "find /opt *",
+            "grep -r * /var/log/*",
+            "grep -r * /etc/*",
             "cat /var/log/*",
             "tail -n * /var/log/*",
+            "tail -f /var/log/*",
         ],
         allowed_paths_read=[
             "/var/log/",
             "/etc/",
             "/home/claude-agent/",
+            "/opt/",
+            "/srv/",
         ],
         allowed_paths_write=[],
     )
@@ -73,6 +110,57 @@ class TestIsCommandPermitted:
         assert is_command_permitted(
             "journalctl -u nginx --no-pager -n 100", bastion_perms
         ) is True
+
+    def test_ss_tulpn_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("ss -tulpn", bastion_perms) is True
+
+    def test_ss_with_args_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("ss -ltnp", bastion_perms) is True
+
+    def test_netstat_tulpn_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("netstat -tulpn", bastion_perms) is True
+
+    def test_lsof_network_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("lsof -i", bastion_perms) is True
+        assert is_command_permitted("lsof -i :80", bastion_perms) is True
+
+    def test_pgrep_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("pgrep nginx", bastion_perms) is True
+
+    def test_pkill_match(self, bastion_perms: RolePermissions) -> None:
+        """pkill is on the allowlist but should require approval."""
+        assert is_command_permitted("pkill nginx", bastion_perms) is True
+
+    def test_journalctl_xe_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("journalctl -xe", bastion_perms) is True
+        assert is_command_permitted("journalctl -xe --no-pager", bastion_perms) is True
+
+    def test_docker_inspect_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("docker inspect my-container", bastion_perms) is True
+
+    def test_docker_network_ls_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("docker network ls", bastion_perms) is True
+
+    def test_docker_volume_ls_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("docker volume ls", bastion_perms) is True
+
+    def test_find_in_allowed_path(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("find /var/log -name *.log", bastion_perms) is True
+
+    def test_find_in_disallowed_path(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("find /root -name *.log", bastion_perms) is False
+
+    def test_grep_recursive_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("grep -r error /var/log/syslog", bastion_perms) is True
+
+    def test_tail_follow_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("tail -f /var/log/syslog", bastion_perms) is True
+
+    def test_systemctl_list_units_failed(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("systemctl list-units --failed", bastion_perms) is True
+
+    def test_ip_addr_match(self, bastion_perms: RolePermissions) -> None:
+        assert is_command_permitted("ip addr", bastion_perms) is True
 
     def test_no_match_rejected(self, bastion_perms: RolePermissions) -> None:
         assert is_command_permitted("rm -rf /", bastion_perms) is False
@@ -118,6 +206,12 @@ class TestPathPermissions:
 
     def test_path_in_home(self, bastion_perms: RolePermissions) -> None:
         assert is_path_readable("/home/claude-agent/notes.txt", bastion_perms) is True
+
+    def test_path_in_opt(self, bastion_perms: RolePermissions) -> None:
+        assert is_path_readable("/opt/monitoring/docker-compose.yml", bastion_perms) is True
+
+    def test_path_in_srv(self, bastion_perms: RolePermissions) -> None:
+        assert is_path_readable("/srv/pterodactyl/config.yml", bastion_perms) is True
 
     def test_path_outside_allowed_dirs(self, bastion_perms: RolePermissions) -> None:
         assert is_path_readable("/root/.ssh/id_rsa", bastion_perms) is False
