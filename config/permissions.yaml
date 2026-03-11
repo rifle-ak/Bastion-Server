@@ -10,20 +10,73 @@ roles:
       - "top -bn1"
       - "dmesg *"
       - "ping -c * *"
+      # Network diagnostics
+      - "ss *"
+      - "ss -tulpn"
+      - "netstat *"
+      - "netstat -tulpn"
+      - "lsof -i"
+      - "lsof -i *"
+      - "ip addr"
+      - "ip addr *"
+      - "ip route"
+      - "ip route *"
+      # Process inspection
+      - "pgrep *"
+      - "pkill *"                                        # REQUIRES APPROVAL
+      # Systemd
       - "systemctl status *"
       - "systemctl list-units *"
+      - "systemctl list-units --failed"
       - "systemctl is-active *"
       - "journalctl -u * --no-pager -n *"
       - "journalctl -u * --no-pager -n * --since *"
+      - "journalctl -u * --no-pager --since *"
+      - "journalctl -xe"
+      - "journalctl -xe --no-pager"
+      - "journalctl -xe --no-pager -n *"
+      # Docker: listing, logs, inspection, networking, volumes
       - "docker ps"
       - "docker ps *"
       - "docker logs *"
+      - "docker inspect *"
+      - "docker stats --no-stream"
+      - "docker stats --no-stream *"
+      - "docker top *"
+      - "docker network ls"
+      - "docker network ls *"
+      - "docker network inspect *"
+      - "docker volume ls"
+      - "docker volume ls *"
+      - "docker volume inspect *"
+      - "docker images"
+      - "docker images *"
+      # File system search (within allowed paths)
+      - "find /var/log *"
+      - "find /etc *"
+      - "find /home/claude-agent *"
+      - "find /opt *"
+      - "grep -r * /var/log/*"
+      - "grep -r * /etc/*"
+      - "grep -r * /home/claude-agent/*"
+      - "grep -r * /opt/*"
+      - "grep -rn * /var/log/*"
+      - "grep -rn * /etc/*"
+      - "grep -rl * /var/log/*"
+      - "grep -rl * /etc/*"
+      # File reading
       - "cat /var/log/*"
       - "tail -n * /var/log/*"
+      - "tail -f /var/log/*"
+      - "cat /opt/*"
+      - "tail -n * /opt/*"
+      - "tail -f /opt/*"
     allowed_paths_read:
       - /var/log/
       - /etc/
       - /home/claude-agent/
+      - /opt/
+      - /srv/
     allowed_paths_write: []
 
   game-server:
@@ -134,9 +187,31 @@ roles:
       - "ping -c * *"
       - "iostat *"
       - "vmstat *"
+      # Network diagnostics
+      - "ss *"
+      - "ss -tulpn"
+      - "netstat *"
+      - "netstat -tulpn"
+      - "lsof -i"
+      - "lsof -i *"
+      - "ip addr"
+      - "ip addr *"
+      - "ip route"
+      - "ip route *"
+      # Process inspection
+      - "pgrep *"
+      # Systemd
       - "systemctl status *"
       - "systemctl list-units *"
+      - "systemctl list-units --failed"
       - "systemctl is-active *"
+      - "journalctl -u * --no-pager -n *"
+      - "journalctl -u * --no-pager -n * --since *"
+      - "journalctl -u * --no-pager --since *"
+      - "journalctl -xe"
+      - "journalctl -xe --no-pager"
+      - "journalctl -xe --no-pager -n *"
+      # Docker
       - "docker ps"
       - "docker ps *"
       - "docker logs *"
@@ -144,11 +219,29 @@ roles:
       - "docker stats --no-stream *"
       - "docker top *"
       - "docker inspect *"
+      - "docker network ls"
+      - "docker network ls *"
+      - "docker network inspect *"
+      - "docker volume ls"
+      - "docker volume ls *"
+      - "docker volume inspect *"
+      - "docker images"
+      - "docker images *"
       - "docker compose -f /opt/monitoring/* ps"
       - "docker compose -f /opt/monitoring/* logs *"
       - "docker compose -f /opt/monitoring/* restart *"
-      - "journalctl -u * --no-pager -n *"
-      - "journalctl -u * --no-pager -n * --since *"
+      # File system search (within allowed paths)
+      - "find /var/log *"
+      - "find /opt/monitoring *"
+      - "grep -r * /var/log/*"
+      - "grep -r * /opt/monitoring/*"
+      # File reading
+      - "cat /var/log/*"
+      - "tail -n * /var/log/*"
+      - "tail -f /var/log/*"
+      - "cat /opt/monitoring/*"
+      - "tail -n * /opt/monitoring/*"
+      - "tail -f /opt/monitoring/*"
     allowed_paths_read:
       - /var/log/
       - /opt/monitoring/
@@ -165,12 +258,31 @@ roles:
       - "top -bn1"
       - "dmesg *"
       - "ping -c * *"
+      # Network diagnostics
+      - "ss *"
+      - "ss -tulpn"
+      - "netstat *"
+      - "netstat -tulpn"
+      - "lsof -i"
+      - "lsof -i *"
+      - "ip addr"
+      - "ip addr *"
+      - "ip route"
+      - "ip route *"
+      # Process inspection
+      - "pgrep *"
+      # Systemd
       - "systemctl status *"
       - "systemctl list-units *"
+      - "systemctl list-units --failed"
       - "systemctl is-active *"
       - "systemctl restart *"                       # REQUIRES APPROVAL
       - "journalctl -u * --no-pager -n *"
       - "journalctl -u * --no-pager -n * --since *"
+      - "journalctl -u * --no-pager --since *"
+      - "journalctl -xe"
+      - "journalctl -xe --no-pager"
+      - "journalctl -xe --no-pager -n *"
       # cPanel/WHM
       - "/usr/local/cpanel/bin/whmapi1 *"
       - "/scripts/restartsrv_*"                     # REQUIRES APPROVAL
@@ -191,9 +303,18 @@ roles:
       - "exim -bpc"
       - "exim -bp"
       # General
+      # File system search (within allowed paths)
+      - "find /var/log *"
+      - "find /usr/local/cpanel/logs *"
+      - "grep -r * /var/log/*"
+      - "grep -r * /usr/local/cpanel/logs/*"
+      # General file reading
       - "cat /var/log/*"
       - "tail -n * /var/log/*"
+      - "tail -f /var/log/*"
       - "tail -n * /usr/local/cpanel/logs/*"
+      - "tail -f /usr/local/cpanel/logs/*"
+      - "cat /usr/local/cpanel/logs/*"
     allowed_paths_read:
       - /var/log/
       - /etc/httpd/
@@ -218,11 +339,30 @@ roles:
       - "ping -c * *"
       - "iostat *"
       - "vmstat *"
+      # Network diagnostics
+      - "ss *"
+      - "ss -tulpn"
+      - "netstat *"
+      - "netstat -tulpn"
+      - "lsof -i"
+      - "lsof -i *"
+      - "ip addr"
+      - "ip addr *"
+      - "ip route"
+      - "ip route *"
+      # Process inspection
+      - "pgrep *"
+      # Systemd
       - "systemctl status *"
       - "systemctl list-units *"
+      - "systemctl list-units --failed"
       - "systemctl is-active *"
       - "journalctl -u * --no-pager -n *"
       - "journalctl -u * --no-pager -n * --since *"
+      - "journalctl -u * --no-pager --since *"
+      - "journalctl -xe"
+      - "journalctl -xe --no-pager"
+      - "journalctl -xe --no-pager -n *"
       # Docker — Saltbox runs everything in containers
       - "docker ps"
       - "docker ps *"
@@ -231,6 +371,14 @@ roles:
       - "docker stats --no-stream"
       - "docker stats --no-stream *"
       - "docker top *"
+      - "docker network ls"
+      - "docker network ls *"
+      - "docker network inspect *"
+      - "docker volume ls"
+      - "docker volume ls *"
+      - "docker volume inspect *"
+      - "docker images"
+      - "docker images *"
       - "docker restart *"                          # REQUIRES APPROVAL
       - "docker compose -f /opt/saltbox/* ps"
       - "docker compose -f /opt/saltbox/* logs *"
@@ -260,6 +408,7 @@ approval_required_patterns:
   - "restart"
   - "stop"
   - "kill"
+  - "pkill"
   - "rm "
   - "remove"
   - "delete"
