@@ -81,11 +81,18 @@ def _build_core(config_path: str):
         MySQLTableOptimize,
         MySQLTableRepair,
     )
+    from agent.tools.diagnose import DiagnoseSite
     from agent.tools.docker_tools import DockerLogs, DockerPs
     from agent.tools.files import ReadFile
     from agent.tools.health import HealthCheck
     from agent.tools.local import RunLocalCommand
     from agent.tools.monitoring import QueryMetrics
+    from agent.tools.pterodactyl import (
+        PterodactylConsoleCommand,
+        PterodactylListServers,
+        PterodactylPowerAction,
+        PterodactylServerStatus,
+    )
     from agent.tools.registry import ToolRegistry
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
@@ -110,6 +117,7 @@ def _build_core(config_path: str):
         WpSecurityScan,
         WpSites,
     )
+    from agent.tools.wp_scan import WpScanAll
 
     agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
     inventory = Inventory(servers_cfg, permissions_cfg)
@@ -177,6 +185,18 @@ def _build_core(config_path: str):
     registry.register(MySQLTableCheck(inventory))
     registry.register(MySQLTableRepair(inventory))
     registry.register(MySQLTableOptimize(inventory))
+
+    # Site diagnosis (one-shot)
+    registry.register(DiagnoseSite(inventory))
+
+    # Batch WordPress scanning
+    registry.register(WpScanAll(inventory))
+
+    # Pterodactyl Panel API
+    registry.register(PterodactylListServers(inventory))
+    registry.register(PterodactylServerStatus(inventory))
+    registry.register(PterodactylPowerAction(inventory))
+    registry.register(PterodactylConsoleCommand(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
@@ -255,6 +275,7 @@ def run(config_dir: str | None, log_level: str | None) -> None:
     except KeyboardInterrupt:
         click.echo("\nSession interrupted.")
     finally:
+        asyncio.run(client.cleanup())
         audit.log_session_end()
         audit.close()
         logger.info("session_ended")
@@ -537,7 +558,13 @@ def chat(socket_path: str, verbose: bool, resume_id: str | None) -> None:
     default=False,
     help="Only output issues (for cron/alerting).",
 )
-def monitor(config_dir: str | None, target_server: str, quiet: bool) -> None:
+@click.option(
+    "--discord-webhook",
+    type=str,
+    default=None,
+    help="Discord webhook URL. Also reads DISCORD_WEBHOOK_URL env var.",
+)
+def monitor(config_dir: str | None, target_server: str, quiet: bool, discord_webhook: str | None) -> None:
     """Run health checks directly — no daemon, no API, zero cost.
 
     Loads config and runs checks against servers in parallel over SSH.
@@ -552,8 +579,10 @@ def monitor(config_dir: str | None, target_server: str, quiet: bool) -> None:
 
       bastion monitor -q               # only show issues (for cron)
 
-      # Cron: check every 15 min, alert on issues
-      */15 * * * * /usr/local/bin/bastion monitor -q 2>&1 | ...
+      bastion monitor --discord-webhook https://discord.com/api/webhooks/...
+
+      # Cron: check every 15 min, alert on issues via Discord
+      */15 * * * * DISCORD_WEBHOOK_URL=https://... /usr/local/bin/bastion monitor -q
     """
     config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
 
@@ -592,6 +621,17 @@ def monitor(config_dir: str | None, target_server: str, quiet: bool) -> None:
             click.echo("\n".join(filtered))
     else:
         click.echo(output)
+
+    # Discord webhook alerting
+    webhook_url = discord_webhook or os.environ.get("DISCORD_WEBHOOK_URL", "")
+    if webhook_url:
+        from agent.alerts import send_discord_alert
+        sent = send_discord_alert(webhook_url, output, result.exit_code)
+        if sent:
+            if not quiet:
+                click.echo("Discord alert sent.")
+        else:
+            click.echo("Warning: Failed to send Discord alert.", err=True)
 
     sys.exit(result.exit_code)
 

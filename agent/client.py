@@ -97,6 +97,11 @@ class ConversationClient:
         self._messages.append({"role": "user", "content": message})
         await self._process_response()
 
+    async def cleanup(self) -> None:
+        """Clean up resources like SSH connection pools."""
+        from agent.tools.docker_tools import close_ssh_pool
+        await close_ssh_pool()
+
     def reset(self) -> None:
         """Clear conversation history (called between daemon sessions)."""
         self._messages.clear()

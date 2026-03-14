@@ -394,3 +394,5 @@ approval_required_patterns:
   - "rcon"
   - "repair"
   - "optimize"
+  - "pterodactyl_power"
+  - "pterodactyl_command"
