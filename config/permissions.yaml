@@ -262,6 +262,9 @@ roles:
       - "mysqladmin processlist"
       - "mysqladmin extended-status"
       - "du -sh /var/lib/mysql/*"
+      - "mysqlcheck --check *"
+      - "mysqlcheck --repair *"                     # REQUIRES APPROVAL
+      - "mysqlcheck --optimize *"                   # REQUIRES APPROVAL
       # ── DNS ──
       - "named-checkconf"
       - "named-checkzone *"
@@ -269,11 +272,29 @@ roles:
       # ── Mail ──
       - "exim -bpc"
       - "exim -bp"
+      - "exim -bpr *"
       # ── SSL ──
       - "echo | openssl *"
       # ── WordPress WP-CLI ──
       - "runuser -u * -- wp *"
       - "find /home/*/public_html -maxdepth * -name * -type *"
+      # ── WordPress security scanning ──
+      - "find /home/*/public_html/wp-content/uploads *"
+      - "find /home/*/public_html -type f -perm *"
+      - "find /home/*/public_html/wp-includes *"
+      - "find /home/*/public_html/wp-admin *"
+      - "grep -rlc * /home/*/public_html/wp-content/*"
+      - "find /home/*/public_html/wp-content -name *"
+      # ── cPanel account investigation ──
+      - "du -sh /home/*/"
+      - "du -sh /home/*/*"
+      - "find /home/* -type f -size *"
+      - "find /home/* -type f -printf *"
+      - "find /home/* -type f 2>/dev/null | wc *"
+      - "cat /home/*/.cpanel/forwarders"
+      - "du -sh /home/*/mail/*"
+      - "du -sh /home/*/mail/*/*"
+      - "ls /opt/cpanel/*/root/usr/bin/php *"
       # ── File checks ──
       - "test -f *"
       - "cat /var/log/*"
@@ -371,3 +392,5 @@ approval_required_patterns:
   - ">"
   - ">>"
   - "rcon"
+  - "repair"
+  - "optimize"

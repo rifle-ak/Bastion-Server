@@ -5,7 +5,12 @@ from __future__ import annotations
 import json
 
 from agent.tools.cpanel import _format_accounts, _format_ssl
-from agent.tools.webserver import _summarize_errors
+from agent.tools.webserver import (
+    _analyze_access_log,
+    _analyze_modsec,
+    _summarize_errors,
+)
+from agent.tools.wordpress import _format_security_scan
 from agent.tools.database import _extract_mysql_metrics
 
 
@@ -22,7 +27,7 @@ class TestCpanelFormatAccounts:
         result = _format_accounts(json.dumps(data))
         assert "john" in result
         assert "example.com" in result
-        assert "YES" in result  # jane is suspended
+        assert "YES" in result
         assert "jane" in result
 
     def test_no_accounts(self):
@@ -92,6 +97,129 @@ class TestWebErrorSummarizer:
         assert "ModSecurity" in result
 
 
+class TestAccessLogAnalysis:
+    def test_basic_analysis(self):
+        log = "\n".join([
+            '192.168.1.1 - - [14/Mar/2026:10:00:00] "GET / HTTP/1.1" 200 1234',
+            '192.168.1.1 - - [14/Mar/2026:10:00:01] "GET /page HTTP/1.1" 200 5678',
+            '10.0.0.1 - - [14/Mar/2026:10:00:02] "GET /other HTTP/1.1" 404 0',
+        ])
+        result = _analyze_access_log(log)
+        assert "3 requests" in result
+        assert "192.168.1.1" in result
+        assert "200" in result
+        assert "404" in result
+
+    def test_brute_force_detection(self):
+        lines = []
+        for i in range(30):
+            lines.append(f'10.0.0.99 - - [14/Mar/2026:10:{i:02d}:00] "POST /wp-login.php HTTP/1.1" 200 0')
+        result = _analyze_access_log("\n".join(lines))
+        assert "brute force" in result.lower()
+        assert "10.0.0.99" in result
+
+    def test_empty_log(self):
+        result = _analyze_access_log("")
+        assert "No log entries" in result
+
+    def test_status_code_breakdown(self):
+        lines = []
+        for _ in range(10):
+            lines.append('1.1.1.1 - - [14/Mar/2026:10:00:00] "GET / HTTP/1.1" 500 0')
+        result = _analyze_access_log("\n".join(lines))
+        assert "500" in result
+        assert "✗" in result  # 500s get error icon
+
+
+class TestModSecurityAnalysis:
+    def test_no_modsec_entries(self):
+        result = _analyze_modsec("some normal log line\nanother line", None)
+        assert "No ModSecurity" in result
+
+    def test_rule_id_extraction(self):
+        log = (
+            '[Mon] [client 10.0.0.1] ModSecurity: Access denied [id "12345"] '
+            '[uri "/wp-admin/upload.php"] [msg "blocked"]\n'
+            '[Mon] [client 10.0.0.2] ModSecurity: Access denied [id "12345"] '
+            '[uri "/wp-login.php"] [msg "blocked"]\n'
+            '[Mon] [client 10.0.0.1] ModSecurity: Access denied [id "67890"] '
+            '[uri "/xmlrpc.php"] [msg "blocked"]\n'
+        )
+        result = _analyze_modsec(log, None)
+        assert "12345" in result
+        assert "67890" in result
+        assert "3 entries" in result
+
+    def test_domain_filter(self):
+        log = (
+            '[Mon] [client 10.0.0.1] ModSecurity: blocked for example.com [id "111"]\n'
+            '[Mon] [client 10.0.0.1] ModSecurity: blocked for other.com [id "222"]\n'
+        )
+        result = _analyze_modsec(log, "example.com")
+        assert "1 entries" in result
+
+    def test_ip_extraction(self):
+        log = '[Mon] [client 192.168.1.100] ModSecurity: Access denied [id "999"]\n'
+        result = _analyze_modsec(log, None)
+        assert "192.168.1.100" in result
+
+
+class TestSecurityScanFormatter:
+    def test_all_clear(self):
+        results = {
+            "core_verify": "Success: WordPress installation verifies against checksums.",
+            "php_in_uploads": "",
+            "world_writable": "",
+            "obfuscated": "",
+            "htaccess": "",
+            "recent_core_changes": "",
+        }
+        output = _format_security_scan(results)
+        assert "All clear" in output
+        assert "✓" in output
+
+    def test_php_in_uploads_detected(self):
+        results = {
+            "core_verify": "Success",
+            "php_in_uploads": "/home/user/public_html/wp-content/uploads/shell.php\n"
+                              "/home/user/public_html/wp-content/uploads/2024/hack.php",
+            "world_writable": "",
+            "obfuscated": "",
+            "htaccess": "",
+            "recent_core_changes": "",
+        }
+        output = _format_security_scan(results)
+        assert "2 found" in output
+        assert "malware" in output.lower()
+        assert "shell.php" in output
+
+    def test_obfuscated_code_detected(self):
+        results = {
+            "core_verify": "Success",
+            "php_in_uploads": "",
+            "world_writable": "",
+            "obfuscated": "/home/user/public_html/wp-content/plugins/bad/evil.php",
+            "htaccess": "",
+            "recent_core_changes": "",
+        }
+        output = _format_security_scan(results)
+        assert "Obfuscated" in output
+        assert "evil.php" in output
+
+    def test_core_integrity_failed(self):
+        results = {
+            "core_verify": "Warning! File doesn't verify against its checksum.\nwp-includes/version.php",
+            "php_in_uploads": "",
+            "world_writable": "",
+            "obfuscated": "",
+            "htaccess": "",
+            "recent_core_changes": "",
+        }
+        output = _format_security_scan(results)
+        assert "MODIFIED" in output
+        assert "version.php" in output
+
+
 class TestMySQLMetrics:
     def test_extract_key_vars(self):
         output = (
@@ -104,7 +232,6 @@ class TestMySQLMetrics:
         assert any("Connected threads" in m for m in metrics)
         assert any("Running threads" in m for m in metrics)
         assert any("Slow queries" in m for m in metrics)
-        # Random_other_var should not appear
         assert not any("999" in m for m in metrics)
 
     def test_empty_output(self):

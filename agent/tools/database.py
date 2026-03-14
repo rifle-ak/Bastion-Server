@@ -210,3 +210,96 @@ def _extract_mysql_metrics(extended_output: str) -> list[str]:
             if var_name in _KEY_VARS:
                 results.append(f"  {_KEY_VARS[var_name]}: {var_value}")
     return results
+
+
+# ── Table Maintenance (requires approval for write operations) ───
+
+
+class MySQLTableCheck(BaseTool):
+    """Check MySQL tables for errors."""
+
+    def __init__(self, inventory: Inventory) -> None:
+        self._inventory = inventory
+
+    @property
+    def name(self) -> str:
+        return "mysql_table_check"
+
+    @property
+    def description(self) -> str:
+        return "Check MySQL/MariaDB tables for corruption. Read-only, safe to run."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "properties": {
+                "server": {"type": "string", "description": "Server name."},
+                "database": {"type": "string", "description": "Database name to check."},
+            },
+            "required": ["server", "database"],
+        }
+
+    async def execute(self, *, server: str, database: str, **kwargs: Any) -> ToolResult:
+        """Check tables via mysqlcheck."""
+        cmd = f"mysqlcheck --check {database}"
+        return await _run_on_server(self._inventory, server, cmd)
+
+
+class MySQLTableRepair(BaseTool):
+    """Repair corrupted MySQL tables (REQUIRES APPROVAL)."""
+
+    def __init__(self, inventory: Inventory) -> None:
+        self._inventory = inventory
+
+    @property
+    def name(self) -> str:
+        return "mysql_table_repair"
+
+    @property
+    def description(self) -> str:
+        return "Repair corrupted MySQL tables. DESTRUCTIVE — requires operator approval."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "properties": {
+                "server": {"type": "string", "description": "Server name."},
+                "database": {"type": "string", "description": "Database name to repair."},
+            },
+            "required": ["server", "database"],
+        }
+
+    async def execute(self, *, server: str, database: str, **kwargs: Any) -> ToolResult:
+        """Repair tables via mysqlcheck."""
+        cmd = f"mysqlcheck --repair {database}"
+        return await _run_on_server(self._inventory, server, cmd)
+
+
+class MySQLTableOptimize(BaseTool):
+    """Optimize MySQL tables to reclaim space (REQUIRES APPROVAL)."""
+
+    def __init__(self, inventory: Inventory) -> None:
+        self._inventory = inventory
+
+    @property
+    def name(self) -> str:
+        return "mysql_table_optimize"
+
+    @property
+    def description(self) -> str:
+        return "Optimize MySQL tables to reclaim space and rebuild indexes. REQUIRES APPROVAL."
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "properties": {
+                "server": {"type": "string", "description": "Server name."},
+                "database": {"type": "string", "description": "Database name to optimize."},
+            },
+            "required": ["server", "database"],
+        }
+
+    async def execute(self, *, server: str, database: str, **kwargs: Any) -> ToolResult:
+        """Optimize tables via mysqlcheck."""
+        cmd = f"mysqlcheck --optimize {database}"
+        return await _run_on_server(self._inventory, server, cmd)

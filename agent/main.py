@@ -60,17 +60,26 @@ def _build_core(config_path: str):
     from agent.security.audit import AuditLogger
     from agent.tools.cpanel import (
         CpanelBackupStatus,
+        CpanelDiskQuota,
+        CpanelDomainLookup,
         CpanelEmailDeliverability,
+        CpanelEmailDiag,
         CpanelListAccounts,
         CpanelAccountInfo,
+        CpanelListDomains,
         CpanelMailQueue,
+        CpanelPhpVersion,
         CpanelSSLStatus,
+        CpanelSuspensionInfo,
     )
     from agent.tools.database import (
         MySQLDatabaseSizes,
         MySQLProcessList,
         MySQLSlowQueries,
         MySQLStatus,
+        MySQLTableCheck,
+        MySQLTableOptimize,
+        MySQLTableRepair,
     )
     from agent.tools.docker_tools import DockerLogs, DockerPs
     from agent.tools.files import ReadFile
@@ -81,18 +90,24 @@ def _build_core(config_path: str):
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
     from agent.tools.webserver import (
+        AccessLogAnalysis,
         ApacheStatus,
         DNSCheck,
+        ModSecurityLog,
         SSLCertCheck,
         WebErrorLog,
     )
     from agent.tools.wordpress import (
+        WpCleanupDry,
         WpCoreUpdate,
         WpCronStatus,
         WpDbCheck,
+        WpFileIntegrity,
         WpHealth,
+        WpPerformance,
         WpPluginStatus,
         WpSearchReplace,
+        WpSecurityScan,
         WpSites,
     )
 
@@ -118,7 +133,6 @@ def _build_core(config_path: str):
 
     # Monitoring
     registry.register(QueryMetrics(inventory))
-    registry.register(HealthCheck(inventory))
 
     # cPanel/WHM
     registry.register(CpanelListAccounts(inventory))
@@ -127,6 +141,12 @@ def _build_core(config_path: str):
     registry.register(CpanelBackupStatus(inventory))
     registry.register(CpanelEmailDeliverability(inventory))
     registry.register(CpanelMailQueue(inventory))
+    registry.register(CpanelDomainLookup(inventory))
+    registry.register(CpanelListDomains(inventory))
+    registry.register(CpanelSuspensionInfo(inventory))
+    registry.register(CpanelDiskQuota(inventory))
+    registry.register(CpanelPhpVersion(inventory))
+    registry.register(CpanelEmailDiag(inventory))
 
     # WordPress
     registry.register(WpSites(inventory))
@@ -136,18 +156,27 @@ def _build_core(config_path: str):
     registry.register(WpDbCheck(inventory))
     registry.register(WpCronStatus(inventory))
     registry.register(WpSearchReplace(inventory))
+    registry.register(WpSecurityScan(inventory))
+    registry.register(WpFileIntegrity(inventory))
+    registry.register(WpPerformance(inventory))
+    registry.register(WpCleanupDry(inventory))
 
     # Web server / SSL / DNS
     registry.register(SSLCertCheck(inventory))
     registry.register(ApacheStatus(inventory))
     registry.register(WebErrorLog(inventory))
     registry.register(DNSCheck(inventory))
+    registry.register(AccessLogAnalysis(inventory))
+    registry.register(ModSecurityLog(inventory))
 
     # MySQL/MariaDB
     registry.register(MySQLStatus(inventory))
     registry.register(MySQLProcessList(inventory))
     registry.register(MySQLSlowQueries(inventory))
     registry.register(MySQLDatabaseSizes(inventory))
+    registry.register(MySQLTableCheck(inventory))
+    registry.register(MySQLTableRepair(inventory))
+    registry.register(MySQLTableOptimize(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
