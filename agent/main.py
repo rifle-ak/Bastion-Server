@@ -81,10 +81,14 @@ def _build_core(config_path: str):
         MySQLTableOptimize,
         MySQLTableRepair,
     )
+    from agent.tools.blast_radius import BlastRadius
     from agent.tools.cron_audit import CronAudit
     from agent.tools.diagnose import DiagnoseSite
     from agent.tools.docker_tools import DockerLogs, DockerPs
+    from agent.tools.explain import ExplainToClient, ShiftHandoff
     from agent.tools.game_diagnose import GameServerDiagnose
+    from agent.tools.incident_timeline import IncidentTimeline
+    from agent.tools.infrastructure_pulse import InfrastructurePulse
     from agent.tools.log_correlate import LogCorrelate
     from agent.tools.page_debug import PageDebug
     from agent.tools.files import ReadFile
@@ -102,6 +106,7 @@ def _build_core(config_path: str):
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
     from agent.tools.uptime_probe import UptimeProbe
+    from agent.tools.what_changed import WhatChanged
     from agent.tools.webserver import (
         AccessLogAnalysis,
         ApacheStatus,
@@ -217,6 +222,16 @@ def _build_core(config_path: str):
     # Cross-server tools
     registry.register(LogCorrelate(inventory))
     registry.register(UptimeProbe(inventory))
+
+    # Incident response & investigation
+    registry.register(WhatChanged(inventory))
+    registry.register(IncidentTimeline(inventory))
+    registry.register(BlastRadius(inventory))
+    registry.register(InfrastructurePulse(inventory))
+
+    # Client communication & handoff
+    registry.register(ExplainToClient())
+    registry.register(ShiftHandoff())
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
@@ -661,6 +676,96 @@ def monitor(config_dir: str | None, target_server: str, quiet: bool, discord_web
                 click.echo(f"  {channel}: {status}")
 
     sys.exit(result.exit_code)
+
+
+@cli.command(name="anomaly-monitor")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to configuration directory.",
+)
+@click.option(
+    "--loop",
+    "loop_seconds",
+    type=int,
+    default=0,
+    help="Run continuously every N seconds (0 = run once and exit).",
+)
+@click.option(
+    "--discord-webhook",
+    type=str,
+    default=None,
+    help="Discord webhook URL for anomaly alerts.",
+)
+@click.option(
+    "--quiet", "-q",
+    is_flag=True,
+    default=False,
+    help="Only output when anomalies are found.",
+)
+def anomaly_monitor(config_dir: str | None, loop_seconds: int, discord_webhook: str | None, quiet: bool) -> None:
+    """Token-free anomaly detection — catches what Netdata misses.
+
+    Compares current metrics against baselines to detect: disk growth
+    rate changes, unexpected reboots, container restart loops, process
+    count spikes, and connection anomalies. Zero API tokens used.
+
+    Examples:
+
+      bastion anomaly-monitor                  # run once
+
+      bastion anomaly-monitor --loop 300       # every 5 minutes
+
+      bastion anomaly-monitor --discord-webhook https://...
+    """
+    config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
+
+    try:
+        _, servers_cfg, permissions_cfg = load_all_config(config_path)
+    except Exception as e:
+        click.echo(f"Config error: {e}", err=True)
+        sys.exit(2)
+
+    from agent.anomaly import run_anomaly_scan
+    from agent.inventory import Inventory
+
+    inventory = Inventory(servers_cfg, permissions_cfg)
+
+    def _run_once() -> int:
+        try:
+            report = asyncio.run(run_anomaly_scan(inventory))
+        except KeyboardInterrupt:
+            sys.exit(130)
+
+        if report.has_issues or not quiet:
+            click.echo(report.format())
+
+        # Send alerts if configured
+        webhook = discord_webhook or os.environ.get("DISCORD_WEBHOOK_URL", "")
+        slack = os.environ.get("SLACK_WEBHOOK_URL", "")
+        email = os.environ.get("ALERT_EMAIL_TO", "")
+
+        if report.has_issues and (webhook or slack or email):
+            from agent.alerts import send_all_alerts
+            send_all_alerts(
+                report.format(), 1 if report.has_issues else 0,
+                discord_url=webhook, slack_url=slack, email_to=email,
+            )
+
+        return 1 if report.has_issues else 0
+
+    if loop_seconds > 0:
+        import time
+        click.echo(f"Anomaly monitor running every {loop_seconds}s. Ctrl-C to stop.")
+        try:
+            while True:
+                _run_once()
+                time.sleep(loop_seconds)
+        except KeyboardInterrupt:
+            click.echo("\nStopped.")
+    else:
+        sys.exit(_run_once())
 
 
 @cli.command(name="add-server")
