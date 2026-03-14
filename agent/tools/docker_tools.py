@@ -25,10 +25,7 @@ class DockerPs(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "List running Docker containers on a server. Set 'all' to true "
-            "to include stopped containers."
-        )
+        return "List Docker containers on a server. Set all=true for stopped too."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -68,10 +65,7 @@ class DockerLogs(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Fetch logs from a Docker container on a server. "
-            "Optionally limit by number of lines or time range."
-        )
+        return "Fetch Docker container logs. Limit by lines or time range."
 
     @property
     def parameters(self) -> dict[str, Any]:

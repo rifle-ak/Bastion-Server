@@ -63,22 +63,15 @@ def build_system_prompt(inventory: Inventory, registry: ToolRegistry) -> str:
     """
     server_section = inventory.format_for_prompt()
 
+    # Compact tool listing — full schemas are in the API tool definitions,
+    # so the system prompt only needs a quick reference.
     tool_lines: list[str] = []
     for schema in registry.get_schemas():
         name = schema["name"]
         desc = schema["description"]
-        params = schema["input_schema"].get("properties", {})
-        required = schema["input_schema"].get("required", [])
-
-        param_parts: list[str] = []
-        for pname, pdef in params.items():
-            ptype = pdef.get("type", "any")
-            pdesc = pdef.get("description", "")
-            req = " (required)" if pname in required else ""
-            param_parts.append(f"    - {pname} ({ptype}{req}): {pdesc}")
-
-        param_block = "\n".join(param_parts) if param_parts else "    (no parameters)"
-        tool_lines.append(f"- **{name}**: {desc}\n{param_block}")
+        params = list(schema["input_schema"].get("properties", {}).keys())
+        param_str = f"({', '.join(params)})" if params else "()"
+        tool_lines.append(f"- **{name}**{param_str}: {desc}")
 
     tool_section = "\n".join(tool_lines)
 

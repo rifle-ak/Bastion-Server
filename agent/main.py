@@ -425,11 +425,10 @@ def chat(socket_path: str, verbose: bool, resume_id: str | None) -> None:
 
 @cli.command()
 @click.option(
-    "--socket",
-    "socket_path",
-    type=click.Path(),
-    default="/run/bastion-agent/agent.sock",
-    help="Unix socket path of the running daemon.",
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to configuration directory.",
 )
 @click.option(
     "--server", "-s",
@@ -444,11 +443,12 @@ def chat(socket_path: str, verbose: bool, resume_id: str | None) -> None:
     default=False,
     help="Only output issues (for cron/alerting).",
 )
-def monitor(socket_path: str, target_server: str, quiet: bool) -> None:
-    """Run a health check and report results.
+def monitor(config_dir: str | None, target_server: str, quiet: bool) -> None:
+    """Run health checks directly — no daemon, no API, zero cost.
 
-    Designed for cron jobs and alerting pipelines. Returns exit
-    code 1 if any issues are found.
+    Loads config and runs checks against servers in parallel over SSH.
+    Designed for cron jobs and alerting pipelines.  Returns exit code 1
+    if any issues are found, 0 if all clear.
 
     Examples:
 
@@ -457,65 +457,49 @@ def monitor(socket_path: str, target_server: str, quiet: bool) -> None:
       bastion monitor -s gameserver-01 # check one server
 
       bastion monitor -q               # only show issues (for cron)
+
+      # Cron: check every 15 min, alert on issues
+      */15 * * * * /usr/local/bin/bastion monitor -q 2>&1 | ...
     """
+    config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
+
     try:
-        asyncio.run(_run_monitor(socket_path, target_server, quiet))
-    except FileNotFoundError:
-        click.echo(f"Error: daemon not running ({socket_path})", err=True)
+        _, servers_cfg, permissions_cfg = load_all_config(config_path)
+    except Exception as e:
+        click.echo(f"Config error: {e}", err=True)
         sys.exit(2)
-    except (ConnectionRefusedError, ConnectionResetError):
-        click.echo("Error: cannot connect to daemon", err=True)
-        sys.exit(2)
+
+    from agent.inventory import Inventory
+    from agent.tools.health import run_health_check
+
+    inventory = Inventory(servers_cfg, permissions_cfg)
+
+    try:
+        result = asyncio.run(run_health_check(inventory, target_server))
     except KeyboardInterrupt:
-        pass
+        sys.exit(130)
 
+    output = result.output
+    if quiet:
+        # Only print lines with issue markers or server headers for context
+        filtered: list[str] = []
+        current_header = ""
+        header_printed = False
+        for line in output.splitlines():
+            if line.startswith("## "):
+                current_header = line
+                header_printed = False
+            elif any(marker in line for marker in ("⚠", "✗", "issue")):
+                if not header_printed and current_header:
+                    filtered.append(current_header)
+                    header_printed = True
+                filtered.append(line)
+        if filtered:
+            click.echo("\n".join(filtered))
+    else:
+        click.echo(output)
 
-async def _run_monitor(socket_path: str, server: str, quiet: bool) -> None:
-    """Send a health check to the daemon and display results."""
-    import json as _json
-
-    reader, writer = await asyncio.open_unix_connection(socket_path)
-
-    msg = f"Run health_check on server={server!r}. Only report findings, no preamble."
-    payload = _json.dumps({"message": msg}) + "\n"
-    writer.write(payload.encode())
-    await writer.drain()
-
-    output_lines: list[str] = []
-    has_issues = False
-
-    while True:
-        line = await reader.readline()
-        if not line:
-            break
-        try:
-            event = _json.loads(line.decode().strip())
-        except _json.JSONDecodeError:
-            continue
-
-        etype = event.get("type", "")
-        if etype == "response":
-            text = event.get("text", "")
-            if quiet:
-                # Only show lines with issue markers
-                for tl in text.splitlines():
-                    if any(marker in tl for marker in ("⚠", "✗", "Issue", "ERROR")):
-                        output_lines.append(tl)
-                        has_issues = True
-            else:
-                output_lines.append(text)
-                if any(marker in text for marker in ("⚠", "✗")):
-                    has_issues = True
-        elif etype in ("done", "goodbye"):
-            break
-
-    writer.close()
-
-    if output_lines:
-        click.echo("\n".join(output_lines))
-
-    if has_issues:
-        sys.exit(1)
+    sys.exit(result.exit_code)
 
 
 @cli.command()

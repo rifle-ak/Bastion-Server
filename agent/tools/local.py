@@ -23,11 +23,7 @@ class RunLocalCommand(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Execute a shell command on the bastion server (this machine). "
-            "Only commands matching the bastion allowlist are permitted. "
-            "Destructive commands require operator approval."
-        )
+        return "Run a command on the bastion server. Must match the bastion allowlist."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -35,7 +31,7 @@ class RunLocalCommand(BaseTool):
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "The command to execute (e.g. 'uptime', 'df -h', 'docker ps').",
+                    "description": "Command to execute (e.g. 'uptime', 'df -h').",
                 },
             },
             "required": ["command"],
