@@ -84,19 +84,36 @@ class SSHPool:
             if not key_file.exists():
                 raise RuntimeError(f"SSH key not found: {defn.key_path}")
 
-            logger.debug("ssh_pool_connect", server=name, host=defn.host)
-            conn = await asyncio.wait_for(
-                asyncssh.connect(
-                    defn.host,
-                    username=defn.user,
-                    client_keys=[defn.key_path],
-                    known_hosts=defn.known_hosts_path,
-                    keepalive_interval=30,
-                ),
-                timeout=_CONNECT_TIMEOUT,
-            )
-            self._connections[name] = conn
-            return conn
+            # Retry with exponential backoff for transient failures
+            last_err: Exception | None = None
+            for attempt in range(3):
+                try:
+                    logger.debug(
+                        "ssh_pool_connect",
+                        server=name, host=defn.host, attempt=attempt + 1,
+                    )
+                    conn = await asyncio.wait_for(
+                        asyncssh.connect(
+                            defn.host,
+                            username=defn.user,
+                            client_keys=[defn.key_path],
+                            known_hosts=defn.known_hosts_path,
+                            keepalive_interval=30,
+                        ),
+                        timeout=_CONNECT_TIMEOUT,
+                    )
+                    self._connections[name] = conn
+                    return conn
+                except (asyncio.TimeoutError, OSError) as e:
+                    last_err = e
+                    if attempt < 2:
+                        delay = 2 ** attempt  # 1s, 2s
+                        logger.debug(
+                            "ssh_pool_retry",
+                            server=name, delay=delay, error=str(e),
+                        )
+                        await asyncio.sleep(delay)
+            raise last_err or RuntimeError(f"SSH connect failed for {name}")
 
     async def run(
         self,

@@ -81,8 +81,12 @@ def _build_core(config_path: str):
         MySQLTableOptimize,
         MySQLTableRepair,
     )
+    from agent.tools.cron_audit import CronAudit
     from agent.tools.diagnose import DiagnoseSite
     from agent.tools.docker_tools import DockerLogs, DockerPs
+    from agent.tools.game_diagnose import GameServerDiagnose
+    from agent.tools.log_correlate import LogCorrelate
+    from agent.tools.page_debug import PageDebug
     from agent.tools.files import ReadFile
     from agent.tools.health import HealthCheck
     from agent.tools.local import RunLocalCommand
@@ -94,8 +98,10 @@ def _build_core(config_path: str):
         PterodactylServerStatus,
     )
     from agent.tools.registry import ToolRegistry
+    from agent.tools.security_audit import SecurityAudit
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
+    from agent.tools.uptime_probe import UptimeProbe
     from agent.tools.webserver import (
         AccessLogAnalysis,
         ApacheStatus,
@@ -117,6 +123,7 @@ def _build_core(config_path: str):
         WpSecurityScan,
         WpSites,
     )
+    from agent.tools.wp_deep_scan import WpDeepPerformance
     from agent.tools.wp_scan import WpScanAll
 
     agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
@@ -197,6 +204,19 @@ def _build_core(config_path: str):
     registry.register(PterodactylServerStatus(inventory))
     registry.register(PterodactylPowerAction(inventory))
     registry.register(PterodactylConsoleCommand(inventory))
+
+    # Deep diagnostics
+    registry.register(GameServerDiagnose(inventory))
+    registry.register(WpDeepPerformance(inventory))
+    registry.register(PageDebug(inventory))
+
+    # Security & auditing
+    registry.register(SecurityAudit(inventory))
+    registry.register(CronAudit(inventory))
+
+    # Cross-server tools
+    registry.register(LogCorrelate(inventory))
+    registry.register(UptimeProbe(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
@@ -622,18 +642,167 @@ def monitor(config_dir: str | None, target_server: str, quiet: bool, discord_web
     else:
         click.echo(output)
 
-    # Discord webhook alerting
+    # Multi-channel alerting (Discord, Slack, email)
     webhook_url = discord_webhook or os.environ.get("DISCORD_WEBHOOK_URL", "")
-    if webhook_url:
-        from agent.alerts import send_discord_alert
-        sent = send_discord_alert(webhook_url, output, result.exit_code)
-        if sent:
-            if not quiet:
-                click.echo("Discord alert sent.")
-        else:
-            click.echo("Warning: Failed to send Discord alert.", err=True)
+    slack_url = os.environ.get("SLACK_WEBHOOK_URL", "")
+    email_to = os.environ.get("ALERT_EMAIL_TO", "")
+
+    if webhook_url or slack_url or email_to:
+        from agent.alerts import send_all_alerts
+        results = send_all_alerts(
+            output, result.exit_code,
+            discord_url=webhook_url,
+            slack_url=slack_url,
+            email_to=email_to,
+        )
+        if not quiet:
+            for channel, success in results.items():
+                status = "sent" if success else "FAILED"
+                click.echo(f"  {channel}: {status}")
 
     sys.exit(result.exit_code)
+
+
+@cli.command(name="add-server")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to configuration directory.",
+)
+def add_server(config_dir: str | None) -> None:
+    """Interactively add a new server to the inventory.
+
+    Walks you through name, host, role, SSH key, and services.
+    Tests the SSH connection before saving. No more editing YAML by hand.
+
+    Examples:
+
+      bastion add-server
+
+      bastion add-server --config-dir /etc/bastion/config
+    """
+    config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
+    servers_file = os.path.join(config_path, "servers.yaml")
+
+    import yaml
+
+    # Load existing servers
+    try:
+        with open(servers_file) as f:
+            servers_data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        servers_data = {}
+
+    existing = servers_data.get("servers", {})
+    if existing:
+        click.echo(f"Existing servers: {', '.join(existing.keys())}")
+    click.echo()
+
+    # Gather info
+    name = click.prompt("Server name (e.g. 'gameserver-02')")
+    if name in existing:
+        if not click.confirm(f"Server '{name}' already exists. Overwrite?"):
+            click.echo("Cancelled.")
+            return
+
+    host = click.prompt("Host (IP or hostname)")
+    role = click.prompt(
+        "Role",
+        type=click.Choice(["bastion", "game-server", "webhost", "monitoring", "saltbox"], case_sensitive=False),
+    )
+    user = click.prompt("SSH user", default="claude-agent")
+    description = click.prompt("Description", default="")
+
+    # SSH setup
+    is_local = click.confirm("Is this a local server (no SSH needed)?", default=False)
+
+    key_path = ""
+    if not is_local:
+        default_key = os.path.expanduser(f"~/.ssh/keys/{name}_ed25519")
+        key_path = click.prompt("SSH key path", default=default_key)
+
+        # Offer to generate SSH key
+        if not os.path.exists(key_path):
+            if click.confirm(f"Key not found at {key_path}. Generate a new keypair?"):
+                key_dir = os.path.dirname(key_path)
+                os.makedirs(key_dir, exist_ok=True)
+                import subprocess
+                result = subprocess.run(
+                    ["ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", "", "-C", f"bastion-agent-{name}"],
+                    capture_output=True, text=True,
+                )
+                if result.returncode == 0:
+                    click.echo(f"✓ Key generated: {key_path}")
+                    click.echo(f"\nPublic key (add to {user}@{host}:~/.ssh/authorized_keys):")
+                    click.echo()
+                    with open(f"{key_path}.pub") as f:
+                        click.echo(f"  {f.read().strip()}")
+                    click.echo()
+                else:
+                    click.echo(f"✗ Key generation failed: {result.stderr}", err=True)
+
+    # Services
+    services_str = click.prompt(
+        "Services (comma-separated, e.g. 'docker,pterodactyl-wings')",
+        default="",
+    )
+    services = [s.strip() for s in services_str.split(",") if s.strip()]
+
+    # Metrics URL (for monitoring servers)
+    metrics_url = ""
+    if role == "monitoring":
+        metrics_url = click.prompt("Metrics URL (VictoriaMetrics/Prometheus)", default="")
+
+    # Build server entry
+    server_entry: dict[str, Any] = {
+        "host": host,
+        "role": role,
+        "user": user,
+        "description": description,
+        "ssh": not is_local,
+    }
+    if key_path:
+        server_entry["key_path"] = key_path
+    if services:
+        server_entry["services"] = services
+    if metrics_url:
+        server_entry["metrics_url"] = metrics_url
+
+    # Test SSH connection
+    if not is_local and os.path.exists(key_path):
+        if click.confirm("Test SSH connection now?", default=True):
+            click.echo(f"Connecting to {user}@{host}...")
+            import subprocess
+            result = subprocess.run(
+                [
+                    "ssh", "-i", key_path,
+                    "-o", "ConnectTimeout=10",
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    f"{user}@{host}", "echo 'connection_ok'"
+                ],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 and "connection_ok" in result.stdout:
+                click.echo("✓ SSH connection successful")
+            else:
+                click.echo(f"✗ SSH connection failed: {result.stderr.strip()}", err=True)
+                if not click.confirm("Save anyway?"):
+                    click.echo("Cancelled.")
+                    return
+
+    # Save
+    if "servers" not in servers_data:
+        servers_data["servers"] = {}
+    servers_data["servers"][name] = server_entry
+
+    with open(servers_file, "w") as f:
+        yaml.dump(servers_data, f, default_flow_style=False, sort_keys=False)
+
+    click.echo(f"\n✓ Server '{name}' added to {servers_file}")
+    click.echo(f"  Role: {role} | Host: {host} | SSH: {not is_local}")
+    if services:
+        click.echo(f"  Services: {', '.join(services)}")
 
 
 @cli.command()

@@ -16,6 +16,8 @@ roles:
       - "ss *"
       - "ss"
       - "ss -s"
+      - "ss -ti"
+      - "curl *"
       - "systemctl status *"
       - "systemctl list-units *"
       - "systemctl is-active *"
@@ -295,6 +297,10 @@ roles:
       - "du -sh /home/*/mail/*"
       - "du -sh /home/*/mail/*/*"
       - "ls /opt/cpanel/*/root/usr/bin/php *"
+      # ── Probes & debugging ──
+      - "curl -sI *"
+      - "curl -so *"
+      - "curl -sL *"
       # ── File checks ──
       - "test -f *"
       - "cat /var/log/*"
