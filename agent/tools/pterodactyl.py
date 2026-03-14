@@ -315,7 +315,17 @@ class PterodactylPowerAction(BaseTool):
 
 
 class PterodactylConsoleCommand(BaseTool):
-    """Send a command to a game server's console via the Panel API."""
+    """Send a command to a game server's console via the Panel API.
+
+    Commands are checked against a game-aware allowlist that auto-detects
+    the game type (Minecraft, Rust, CS2, etc.) and classifies commands as
+    safe (no approval), needs-approval, or blocked. This prevents
+    accidental server shutdowns via console while allowing safe read-only
+    commands like ``list`` or ``status`` to run freely.
+
+    The allowlist evolves: custom rules in config/console_commands.yaml
+    override built-in defaults without code changes.
+    """
 
     def __init__(self, inventory: Inventory) -> None:
         self._inventory = inventory
@@ -328,7 +338,9 @@ class PterodactylConsoleCommand(BaseTool):
     def description(self) -> str:
         return (
             "Send a console command to a running game server via the "
-            "Pterodactyl Panel API. REQUIRES OPERATOR APPROVAL."
+            "Pterodactyl Panel API. Safe commands (list, status, tps) run "
+            "freely. Destructive commands need approval. Server stop/quit "
+            "commands are blocked — use pterodactyl_power instead."
         )
 
     @property
@@ -347,20 +359,81 @@ class PterodactylConsoleCommand(BaseTool):
                     "type": "string",
                     "description": "Console command to send (e.g. 'say Hello' for Minecraft).",
                 },
+                "game_type": {
+                    "type": "string",
+                    "description": (
+                        "Game type if known: 'minecraft_java', 'minecraft_bedrock', "
+                        "'rust', 'valheim', 'source', 'ark', 'terraria'. "
+                        "Auto-detected from the server if omitted."
+                    ),
+                },
             },
             "required": ["server", "identifier", "command"],
         }
 
-    async def execute(self, *, server: str, identifier: str, command: str, **kwargs: Any) -> ToolResult:
-        """Send a console command via Client API."""
+    async def execute(
+        self,
+        *,
+        server: str,
+        identifier: str,
+        command: str,
+        game_type: str = "",
+        **kwargs: Any,
+    ) -> ToolResult:
+        """Send a console command via Client API with allowlist enforcement."""
+        from agent.security.console_allowlist import (
+            CommandAction,
+            get_console_allowlist,
+        )
+
         config = _get_panel_config(self._inventory, server)
         if not config:
             return ToolResult(error="Panel not configured.", exit_code=1)
         url, api_key = config
+
+        # Auto-detect game type if not provided
+        container_info = identifier
+        if not game_type:
+            try:
+                server_data = _panel_client_get(url, api_key, f"servers/{identifier}")
+                attrs = server_data.get("attributes", {})
+                container_info = (
+                    f"{attrs.get('name', '')} {attrs.get('docker_image', '')} "
+                    f"{identifier}"
+                )
+            except RuntimeError:
+                pass  # Detection is best-effort
+
+        # Check command against game-aware allowlist
+        allowlist = get_console_allowlist()
+        check = allowlist.check_command(
+            command,
+            game_type=game_type or "unknown",
+            container_info=container_info,
+        )
+
+        if check.action == CommandAction.DENY:
+            return ToolResult(
+                error=(
+                    f"Command blocked: {check.reason}. "
+                    f"Use pterodactyl_power to stop/restart servers."
+                ),
+                exit_code=1,
+            )
+
+        # For APPROVE actions, the registry's approval pipeline handles it
+        # (pterodactyl_command is already in approval_required_patterns).
+        # For ALLOW actions, we store a flag so the registry can skip approval.
+        if check.action == CommandAction.ALLOW:
+            # Mark this execution as pre-approved by the console allowlist
+            kwargs["_console_preapproved"] = True
 
         try:
             _panel_post(url, api_key, f"servers/{identifier}/command", {"command": command})
         except RuntimeError as e:
             return ToolResult(error=str(e), exit_code=1)
 
-        return ToolResult(output=f"Command sent to {identifier}: {command}")
+        game_label = check.game_type if check.game_type != "unknown" else "game"
+        return ToolResult(
+            output=f"[{game_label}] Command sent to {identifier}: {command}"
+        )

@@ -81,16 +81,22 @@ def _build_core(config_path: str):
         MySQLTableOptimize,
         MySQLTableRepair,
     )
+    from agent.tools.backup_audit import BackupAudit
     from agent.tools.blast_radius import BlastRadius
+    from agent.tools.config_diff import ConfigBaseline, ConfigDiff
     from agent.tools.cron_audit import CronAudit
+    from agent.tools.customer_impact import CustomerImpact
     from agent.tools.diagnose import DiagnoseSite
     from agent.tools.docker_tools import DockerLogs, DockerPs
     from agent.tools.explain import ExplainToClient, ShiftHandoff
     from agent.tools.game_diagnose import GameServerDiagnose
+    from agent.tools.incident_report import IncidentReport
     from agent.tools.incident_timeline import IncidentTimeline
     from agent.tools.infrastructure_pulse import InfrastructurePulse
+    from agent.tools.mod_conflict_check import ModConflictCheck
     from agent.tools.log_correlate import LogCorrelate
     from agent.tools.page_debug import PageDebug
+    from agent.tools.pterodactyl_overview import PterodactylOverview
     from agent.tools.files import ReadFile
     from agent.tools.health import HealthCheck
     from agent.tools.local import RunLocalCommand
@@ -102,6 +108,7 @@ def _build_core(config_path: str):
         PterodactylServerStatus,
     )
     from agent.tools.registry import ToolRegistry
+    from agent.tools.resource_rightsizing import ResourceRightsizing
     from agent.tools.security_audit import SecurityAudit
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
@@ -232,6 +239,30 @@ def _build_core(config_path: str):
     # Client communication & handoff
     registry.register(ExplainToClient())
     registry.register(ShiftHandoff())
+
+    # Ticket intake & incident reporting
+    from agent.tools.ticket_intake import TicketIntake
+    registry.register(TicketIntake())
+    registry.register(IncidentReport())
+
+    # Config management & compliance
+    registry.register(ConfigDiff(inventory))
+    registry.register(ConfigBaseline(inventory))
+
+    # Backup auditing
+    registry.register(BackupAudit(inventory))
+
+    # Pterodactyl cross-node overview
+    registry.register(PterodactylOverview(inventory))
+
+    # Customer impact mapping
+    registry.register(CustomerImpact(inventory))
+
+    # Resource rightsizing
+    registry.register(ResourceRightsizing(inventory))
+
+    # Game server mod/plugin conflict detection
+    registry.register(ModConflictCheck(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
