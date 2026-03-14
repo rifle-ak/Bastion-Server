@@ -60,6 +60,7 @@ def _build_core(config_path: str):
     from agent.security.audit import AuditLogger
     from agent.tools.docker_tools import DockerLogs, DockerPs
     from agent.tools.files import ReadFile
+    from agent.tools.health import HealthCheck
     from agent.tools.local import RunLocalCommand
     from agent.tools.monitoring import QueryMetrics
     from agent.tools.registry import ToolRegistry
@@ -81,6 +82,7 @@ def _build_core(config_path: str):
     registry.register(ServiceStatus(inventory))
     registry.register(ServiceJournal(inventory))
     registry.register(QueryMetrics(inventory))
+    registry.register(HealthCheck(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
@@ -362,6 +364,158 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
     await ui.stop()
     audit.close()
     logger.info("daemon_exited")
+
+
+@cli.command()
+@click.option(
+    "--socket",
+    "socket_path",
+    type=click.Path(),
+    default="/run/bastion-agent/agent.sock",
+    help="Unix socket path of the running daemon.",
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    default=False,
+    help="Show full tool call details and results.",
+)
+@click.option(
+    "--resume", "-r",
+    "resume_id",
+    type=str,
+    default=None,
+    help="Resume a previous session by ID.",
+)
+def chat(socket_path: str, verbose: bool, resume_id: str | None) -> None:
+    """Start an interactive chat session with the agent.
+
+    Connects to the running daemon and provides a continuous
+    conversation REPL. Much more natural than sending one-off
+    messages with ``bastion-agent send``.
+
+    Examples:
+
+      bastion chat                     # start chatting
+
+      bastion chat -v                  # verbose tool output
+
+      bastion chat -r abc123def456     # resume a session
+    """
+    try:
+        asyncio.run(_send_message(
+            socket_path,
+            message=None,
+            interactive=True,
+            verbose=verbose,
+            resume_id=resume_id,
+        ))
+    except FileNotFoundError:
+        click.echo(f"Error: socket not found at {socket_path}. Is the daemon running?", err=True)
+        sys.exit(1)
+    except ConnectionRefusedError:
+        click.echo("Error: connection refused. Is the daemon running?", err=True)
+        sys.exit(1)
+    except ConnectionResetError:
+        click.echo("Error: connection reset by daemon. Try: bastion restart", err=True)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo("\nDisconnected.")
+
+
+@cli.command()
+@click.option(
+    "--socket",
+    "socket_path",
+    type=click.Path(),
+    default="/run/bastion-agent/agent.sock",
+    help="Unix socket path of the running daemon.",
+)
+@click.option(
+    "--server", "-s",
+    "target_server",
+    type=str,
+    default="all",
+    help="Server to check, or 'all' (default: all).",
+)
+@click.option(
+    "--quiet", "-q",
+    is_flag=True,
+    default=False,
+    help="Only output issues (for cron/alerting).",
+)
+def monitor(socket_path: str, target_server: str, quiet: bool) -> None:
+    """Run a health check and report results.
+
+    Designed for cron jobs and alerting pipelines. Returns exit
+    code 1 if any issues are found.
+
+    Examples:
+
+      bastion monitor                  # check all servers
+
+      bastion monitor -s gameserver-01 # check one server
+
+      bastion monitor -q               # only show issues (for cron)
+    """
+    try:
+        asyncio.run(_run_monitor(socket_path, target_server, quiet))
+    except FileNotFoundError:
+        click.echo(f"Error: daemon not running ({socket_path})", err=True)
+        sys.exit(2)
+    except (ConnectionRefusedError, ConnectionResetError):
+        click.echo("Error: cannot connect to daemon", err=True)
+        sys.exit(2)
+    except KeyboardInterrupt:
+        pass
+
+
+async def _run_monitor(socket_path: str, server: str, quiet: bool) -> None:
+    """Send a health check to the daemon and display results."""
+    import json as _json
+
+    reader, writer = await asyncio.open_unix_connection(socket_path)
+
+    msg = f"Run health_check on server={server!r}. Only report findings, no preamble."
+    payload = _json.dumps({"message": msg}) + "\n"
+    writer.write(payload.encode())
+    await writer.drain()
+
+    output_lines: list[str] = []
+    has_issues = False
+
+    while True:
+        line = await reader.readline()
+        if not line:
+            break
+        try:
+            event = _json.loads(line.decode().strip())
+        except _json.JSONDecodeError:
+            continue
+
+        etype = event.get("type", "")
+        if etype == "response":
+            text = event.get("text", "")
+            if quiet:
+                # Only show lines with issue markers
+                for tl in text.splitlines():
+                    if any(marker in tl for marker in ("⚠", "✗", "Issue", "ERROR")):
+                        output_lines.append(tl)
+                        has_issues = True
+            else:
+                output_lines.append(text)
+                if any(marker in text for marker in ("⚠", "✗")):
+                    has_issues = True
+        elif etype in ("done", "goodbye"):
+            break
+
+    writer.close()
+
+    if output_lines:
+        click.echo("\n".join(output_lines))
+
+    if has_issues:
+        sys.exit(1)
 
 
 @cli.command()

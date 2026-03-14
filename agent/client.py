@@ -22,7 +22,7 @@ logger = structlog.get_logger()
 # Max characters to keep per tool result in message history.
 # The user still sees the full output — this only affects what we
 # send back to the API on subsequent turns to control token usage.
-_MAX_TOOL_RESULT_CHARS = 3000
+_MAX_TOOL_RESULT_CHARS = 2000
 
 _RATE_LIMIT_MAX_RETRIES = 3
 _RATE_LIMIT_BASE_DELAY = 2.0  # seconds
