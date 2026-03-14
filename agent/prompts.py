@@ -40,6 +40,9 @@ When checking server health or reviewing output, ALWAYS flag:
 - Unusual network connection counts
 - Pterodactyl Wings errors or connectivity issues
 - Game server crashes (repeated container restarts, exit codes)
+- cPanel: mail queue spikes, Apache process storms, SSL cert issues
+- WordPress: outdated plugins with known vulns, failed cron, db errors
+- MySQL: slow queries, high thread count, table corruption
 
 Don't wait to be asked — if you see a problem, call it out.
 

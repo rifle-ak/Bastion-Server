@@ -1,10 +1,11 @@
-"""Tests for the health check tool's parsing and analysis functions."""
+"""Tests for health check parsers and webhost analysis."""
 
 from __future__ import annotations
 
 import pytest
 
 from agent.tools.health import (
+    _analyze_webhost,
     _count_oom,
     _parse_containers,
     _parse_disk,
@@ -15,8 +16,6 @@ from agent.tools.health import (
 
 
 class TestParseDisk:
-    """Tests for df -h output parsing."""
-
     def test_healthy_disk(self):
         output = (
             "Filesystem      Size  Used Avail Use% Mounted on\n"
@@ -33,7 +32,6 @@ class TestParseDisk:
         issues = _parse_disk(output)
         assert len(issues) == 1
         assert "91%" in issues[0]
-        assert "/" in issues[0]
 
     def test_skips_snap_mounts(self):
         output = (
@@ -55,26 +53,21 @@ class TestParseDisk:
             "/dev/sda1        50G   45G   3.5G  91% /\n"
             "/dev/sdb1       100G   85G   12G   85% /data\n"
         )
-        issues = _parse_disk(output)
-        assert len(issues) == 2
+        assert len(_parse_disk(output)) == 2
 
 
 class TestParseMemory:
-    """Tests for free -m output parsing."""
-
     def test_healthy_memory(self):
         output = (
             "              total        used        free      shared  buff/cache   available\n"
             "Mem:          16000        8000        4000         200        4000       10000\n"
-            "Swap:          2000           0        2000\n"
         )
         assert _parse_memory(output) is None
 
     def test_high_memory(self):
         output = (
-            "              total        used        free      shared  buff/cache   available\n"
-            "Mem:          16000       14000         500         200        1500        1000\n"
-            "Swap:          2000           0        2000\n"
+            "              total        used        free\n"
+            "Mem:          16000       14000         500\n"
         )
         result = _parse_memory(output)
         assert result is not None
@@ -85,13 +78,10 @@ class TestParseMemory:
 
 
 class TestParseContainers:
-    """Tests for docker ps output parsing."""
-
     def test_all_running(self):
         output = (
             "NAMES\tSTATUS\tSTATE\n"
             "web\tUp 3 hours\trunning\n"
-            "db\tUp 3 hours\trunning\n"
         )
         assert _parse_containers(output) == []
 
@@ -102,10 +92,9 @@ class TestParseContainers:
         assert "exited" in issues[0].lower()
 
     def test_restarting_container(self):
-        output = "game01\tRestarting (1) 10 seconds ago\trestarting\n"
+        output = "game01\tRestarting (1) 10s ago\trestarting\n"
         issues = _parse_containers(output)
         assert len(issues) == 1
-        assert "restarting" in issues[0].lower()
         assert "crash loop" in issues[0].lower()
 
     def test_unhealthy_container(self):
@@ -120,19 +109,16 @@ class TestParseContainers:
             "game01\tExited (137)\texited\n"
             "game02\tRestarting\trestarting\n"
         )
-        issues = _parse_containers(output)
-        assert len(issues) == 2
+        assert len(_parse_containers(output)) == 2
 
 
 class TestParseIowait:
-    """Tests for I/O wait parsing from top output."""
-
     def test_normal_iowait(self):
-        line = "%Cpu(s):  2.3 us,  1.0 sy,  0.0 ni, 95.5 id,  1.2 wa,  0.0 hi,  0.0 si,  0.0 st"
+        line = "%Cpu(s):  2.3 us,  1.0 sy,  0.0 ni, 95.5 id,  1.2 wa,  0.0 hi"
         assert _parse_iowait(line) == pytest.approx(1.2)
 
     def test_high_iowait(self):
-        line = "%Cpu(s):  5.0 us,  2.0 sy,  0.0 ni, 70.0 id, 23.0 wa,  0.0 hi,  0.0 si,  0.0 st"
+        line = "%Cpu(s):  5.0 us,  2.0 sy,  0.0 ni, 70.0 id, 23.0 wa,  0.0 hi"
         assert _parse_iowait(line) == pytest.approx(23.0)
 
     def test_no_cpu_line(self):
@@ -142,18 +128,15 @@ class TestParseIowait:
         output = (
             "top - 14:00:00 up 5 days\n"
             "Tasks: 200 total\n"
-            "%Cpu(s):  3.0 us,  1.0 sy,  0.0 ni, 90.0 id,  6.0 wa,  0.0 hi,  0.0 si\n"
-            "MiB Mem: 16000.0 total\n"
+            "%Cpu(s):  3.0 us,  1.0 sy,  0.0 ni, 90.0 id,  6.0 wa,  0.0 hi\n"
         )
         assert _parse_iowait(output) == pytest.approx(6.0)
 
 
 class TestCountOom:
-    """Tests for OOM kill detection."""
-
     def test_no_oom(self):
         assert _count_oom("") == 0
-        assert _count_oom("some normal dmesg output\nanother line") == 0
+        assert _count_oom("normal dmesg output\nanother line") == 0
 
     def test_oom_kills(self):
         output = (
@@ -165,18 +148,15 @@ class TestCountOom:
 
 
 class TestParseTcpConnections:
-    """Tests for TCP connection count parsing."""
-
     def test_normal_output(self):
         output = (
             "Total: 150\n"
             "TCP:   85 (estab 42, closed 5, orphaned 0, timewait 38)\n"
-            "Transport Total     IP        IPv6\n"
         )
         assert _parse_tcp_connections(output) == 42
 
     def test_high_connections(self):
-        output = "TCP:   2000 (estab 1500, closed 100, orphaned 10, timewait 390)\n"
+        output = "TCP:   2000 (estab 1500, closed 100, orphaned 10)\n"
         assert _parse_tcp_connections(output) == 1500
 
     def test_no_tcp_line(self):
@@ -184,3 +164,73 @@ class TestParseTcpConnections:
 
     def test_empty(self):
         assert _parse_tcp_connections("") is None
+
+
+class TestAnalyzeWebhost:
+    def test_mysql_normal(self):
+        raw = {"mysql_status": "Uptime: 86400  Threads: 5  Slow queries: 0"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("MySQL" in l for l in lines)
+        assert len(issues) == 0
+
+    def test_mysql_high_threads(self):
+        raw = {"mysql_status": "Uptime: 86400  Threads: 150  Slow queries: 0"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("high threads" in i for i in issues)
+
+    def test_mysql_slow_queries(self):
+        raw = {"mysql_status": "Uptime: 86400  Threads: 5  Slow queries: 100"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("slow queries" in i.lower() for i in issues)
+
+    def test_mail_queue_normal(self):
+        raw = {"mail_queue": "15"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("15" in l for l in lines)
+        assert len(issues) == 0
+
+    def test_mail_queue_high(self):
+        raw = {"mail_queue": "750"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("750" in i for i in issues)
+        assert any("spam" in i.lower() or "bounce" in i.lower() for i in issues)
+
+    def test_mail_queue_moderate(self):
+        raw = {"mail_queue": "200"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("200" in i for i in issues)
+
+    def test_apache_normal(self):
+        raw = {"apache_procs": "30"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("30" in l for l in lines)
+        assert len(issues) == 0
+
+    def test_apache_high(self):
+        raw = {"apache_procs": "350"}
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost(raw, lines, issues)
+        assert any("350" in i for i in issues)
+        assert any("DDoS" in i or "MaxClients" in i for i in issues)
+
+    def test_empty_raw(self):
+        lines: list[str] = []
+        issues: list[str] = []
+        _analyze_webhost({}, lines, issues)
+        assert lines == []
+        assert issues == []

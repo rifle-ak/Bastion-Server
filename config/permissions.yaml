@@ -5,11 +5,17 @@ roles:
       - "df -h"
       - "df -h *"
       - "free -h"
+      - "free -m"
       - "ps aux"
       - "ps aux *"
       - "top -bn1"
+      - "top -b -n *"
+      - "nproc"
       - "dmesg *"
       - "ping -c * *"
+      - "ss *"
+      - "ss"
+      - "ss -s"
       - "systemctl status *"
       - "systemctl list-units *"
       - "systemctl is-active *"
@@ -20,6 +26,8 @@ roles:
       - "docker logs *"
       - "cat /var/log/*"
       - "tail -n * /var/log/*"
+      - "dig *"
+      - "echo | openssl *"
     allowed_paths_read:
       - /var/log/
       - /etc/
@@ -213,44 +221,76 @@ roles:
 
   webhost:
     allowed_commands:
+      # ── System health ──
       - "uptime"
       - "df -h"
       - "df -h *"
       - "free -h"
+      - "free -m"
       - "ps aux"
       - "ps aux *"
       - "top -bn1"
+      - "top -b -n *"
       - "dmesg *"
       - "ping -c * *"
+      - "nproc"
+      - "ss *"
+      - "ss"
+      - "ss -s"
+      - "iostat *"
+      - "vmstat *"
+      # ── Systemd ──
       - "systemctl status *"
       - "systemctl list-units *"
       - "systemctl is-active *"
       - "systemctl restart *"                       # REQUIRES APPROVAL
       - "journalctl -u * --no-pager -n *"
       - "journalctl -u * --no-pager -n * --since *"
-      # cPanel/WHM
+      # ── cPanel/WHM API ──
       - "/usr/local/cpanel/bin/whmapi1 *"
+      - "whmapi1 *"
       - "/scripts/restartsrv_*"                     # REQUIRES APPROVAL
       - "/usr/local/cpanel/bin/cplogin"
-      - "whmapi1 *"
-      # Apache
+      # ── Apache/LiteSpeed ──
       - "httpd -S"
       - "httpd -t"
       - "apachectl status"
       - "apachectl configtest"
-      # MySQL
+      - "litespeed -v"
+      # ── MySQL/MariaDB ──
       - "mysqladmin status"
       - "mysqladmin processlist"
-      # DNS
+      - "mysqladmin extended-status"
+      - "du -sh /var/lib/mysql/*"
+      # ── DNS ──
       - "named-checkconf"
       - "named-checkzone *"
-      # Mail
+      - "dig *"
+      # ── Mail ──
       - "exim -bpc"
       - "exim -bp"
-      # General
+      # ── SSL ──
+      - "echo | openssl *"
+      # ── WordPress WP-CLI ──
+      - "runuser -u * -- wp *"
+      - "find /home/*/public_html -maxdepth * -name * -type *"
+      # ── File checks ──
+      - "test -f *"
       - "cat /var/log/*"
       - "tail -n * /var/log/*"
       - "tail -n * /usr/local/cpanel/logs/*"
+      - "tail -n * /etc/httpd/logs/*"
+      - "tail -n * /var/log/apache2/*"
+      - "tail -n * /var/log/httpd/*"
+      - "tail -n * /usr/local/apache/logs/*"
+      - "tail -n * /var/log/nginx/*"
+      - "tail -n * /var/log/mysql/*"
+      - "tail -n * /var/lib/mysql/*"
+      - "tail -n * /var/log/mariadb/*"
+      - "head -n * *"
+      - "ls *"
+      - "ls"
+      - "du -sh *"
     allowed_paths_read:
       - /var/log/
       - /etc/httpd/
@@ -259,6 +299,9 @@ roles:
       - /usr/local/cpanel/logs/
       - /var/cpanel/
       - /etc/cpanel/
+      - /etc/apache2/
+      - /etc/nginx/
+      - /home/
     allowed_paths_write: []
 
   saltbox:

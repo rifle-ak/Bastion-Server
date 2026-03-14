@@ -58,6 +58,20 @@ def _build_core(config_path: str):
     from agent.inventory import Inventory
     from agent.prompts import build_system_prompt
     from agent.security.audit import AuditLogger
+    from agent.tools.cpanel import (
+        CpanelBackupStatus,
+        CpanelEmailDeliverability,
+        CpanelListAccounts,
+        CpanelAccountInfo,
+        CpanelMailQueue,
+        CpanelSSLStatus,
+    )
+    from agent.tools.database import (
+        MySQLDatabaseSizes,
+        MySQLProcessList,
+        MySQLSlowQueries,
+        MySQLStatus,
+    )
     from agent.tools.docker_tools import DockerLogs, DockerPs
     from agent.tools.files import ReadFile
     from agent.tools.health import HealthCheck
@@ -66,6 +80,21 @@ def _build_core(config_path: str):
     from agent.tools.registry import ToolRegistry
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
+    from agent.tools.webserver import (
+        ApacheStatus,
+        DNSCheck,
+        SSLCertCheck,
+        WebErrorLog,
+    )
+    from agent.tools.wordpress import (
+        WpCoreUpdate,
+        WpCronStatus,
+        WpDbCheck,
+        WpHealth,
+        WpPluginStatus,
+        WpSearchReplace,
+        WpSites,
+    )
 
     agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
     inventory = Inventory(servers_cfg, permissions_cfg)
@@ -73,16 +102,52 @@ def _build_core(config_path: str):
 
     # Build tool registry and register all tools
     registry = ToolRegistry(agent_cfg, inventory, audit)
+
+    # Core tools
     registry.register(RunLocalCommand())
     registry.register(ReadFile(inventory))
     registry.register(ListServers(inventory))
     registry.register(GetServerStatus(inventory))
+    registry.register(HealthCheck(inventory))
+
+    # Docker & systemd
     registry.register(DockerPs(inventory))
     registry.register(DockerLogs(inventory))
     registry.register(ServiceStatus(inventory))
     registry.register(ServiceJournal(inventory))
+
+    # Monitoring
     registry.register(QueryMetrics(inventory))
     registry.register(HealthCheck(inventory))
+
+    # cPanel/WHM
+    registry.register(CpanelListAccounts(inventory))
+    registry.register(CpanelAccountInfo(inventory))
+    registry.register(CpanelSSLStatus(inventory))
+    registry.register(CpanelBackupStatus(inventory))
+    registry.register(CpanelEmailDeliverability(inventory))
+    registry.register(CpanelMailQueue(inventory))
+
+    # WordPress
+    registry.register(WpSites(inventory))
+    registry.register(WpHealth(inventory))
+    registry.register(WpPluginStatus(inventory))
+    registry.register(WpCoreUpdate(inventory))
+    registry.register(WpDbCheck(inventory))
+    registry.register(WpCronStatus(inventory))
+    registry.register(WpSearchReplace(inventory))
+
+    # Web server / SSL / DNS
+    registry.register(SSLCertCheck(inventory))
+    registry.register(ApacheStatus(inventory))
+    registry.register(WebErrorLog(inventory))
+    registry.register(DNSCheck(inventory))
+
+    # MySQL/MariaDB
+    registry.register(MySQLStatus(inventory))
+    registry.register(MySQLProcessList(inventory))
+    registry.register(MySQLSlowQueries(inventory))
+    registry.register(MySQLDatabaseSizes(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():

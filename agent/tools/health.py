@@ -110,6 +110,7 @@ async def _check_server(server_info: ServerInfo) -> tuple[str, bool]:
         Tuple of (report_text, has_issues).
     """
     is_local = not server_info.definition.ssh
+    role = server_info.definition.role
 
     commands: dict[str, str] = {
         "uptime": "uptime",
@@ -138,6 +139,18 @@ async def _check_server(server_info: ServerInfo) -> tuple[str, bool]:
     for svc in server_info.definition.services:
         if svc != "docker":
             commands[f"svc:{svc}"] = f"systemctl is-active {svc}"
+
+    # ── Webhost-specific checks ──
+    if role == "webhost":
+        # Apache connections and load
+        commands["apache_procs"] = "ps aux | grep -c httpd"
+        # MySQL threads
+        commands["mysql_status"] = "mysqladmin status"
+        # Mail queue size
+        if "exim" in server_info.definition.services:
+            commands["mail_queue"] = "exim -bpc"
+        # cPanel update status
+        commands["cpanel_version"] = "/usr/local/cpanel/cpanel -V"
 
     if is_local:
         raw = await _run_local_parallel(commands)
@@ -243,7 +256,6 @@ def _analyze(
     uptime_raw = raw.get("uptime", "")
     nproc_raw = raw.get("nproc", "")
     if uptime_raw and not uptime_raw.startswith("ERROR:"):
-        # Extract just the essentials
         uptime_short = uptime_raw.strip()
         lines.append(f"Uptime: {uptime_short}")
         if "load average:" in uptime_raw:
@@ -326,6 +338,9 @@ def _analyze(
         elif val.strip() != "active":
             issues.append(f"✗ {svc_name}: {val.strip()}")
 
+    # --- Webhost-specific ---
+    _analyze_webhost(raw, lines, issues)
+
     # --- Build final report ---
     has_issues = bool(issues)
     if issues:
@@ -339,6 +354,57 @@ def _analyze(
         report_lines.extend(lines)
 
     return "\n".join(report_lines), has_issues
+
+
+def _analyze_webhost(
+    raw: dict[str, str], lines: list[str], issues: list[str],
+) -> None:
+    """Analyze webhost-specific check results."""
+    # MySQL status
+    mysql_raw = raw.get("mysql_status", "")
+    if mysql_raw and not mysql_raw.startswith("ERROR:"):
+        lines.append(f"MySQL: {mysql_raw.strip()}")
+        # Check for high thread count
+        match = re.search(r'Threads:\s*(\d+)', mysql_raw)
+        if match and int(match.group(1)) > 100:
+            issues.append(f"⚠ MySQL high threads: {match.group(1)}")
+        # Check for slow queries
+        match = re.search(r'Slow queries:\s*(\d+)', mysql_raw)
+        if match and int(match.group(1)) > 0:
+            slow_count = int(match.group(1))
+            if slow_count > 50:
+                issues.append(f"⚠ MySQL slow queries: {slow_count}")
+
+    # Mail queue
+    mail_raw = raw.get("mail_queue", "")
+    if mail_raw and not mail_raw.startswith("ERROR:"):
+        try:
+            queue_size = int(mail_raw.strip())
+            if queue_size > 500:
+                issues.append(f"⚠ Mail queue: {queue_size} messages (possible spam or bounce storm)")
+            elif queue_size > 100:
+                issues.append(f"⚠ Mail queue: {queue_size} messages")
+            else:
+                lines.append(f"Mail queue: {queue_size}")
+        except ValueError:
+            lines.append(f"Mail queue: {mail_raw.strip()}")
+
+    # Apache process count
+    apache_raw = raw.get("apache_procs", "")
+    if apache_raw and not apache_raw.startswith("ERROR:"):
+        try:
+            count = int(apache_raw.strip())
+            if count > 200:
+                issues.append(f"⚠ Apache: {count} processes (possible DDoS or misconfigured MaxClients)")
+            else:
+                lines.append(f"Apache processes: {count}")
+        except ValueError:
+            pass
+
+    # cPanel version
+    cpanel_raw = raw.get("cpanel_version", "")
+    if cpanel_raw and not cpanel_raw.startswith("ERROR:"):
+        lines.append(f"cPanel: {cpanel_raw.strip()}")
 
 
 # ── Parsers ──────────────────────────────────────────────────────
@@ -413,7 +479,6 @@ def _parse_containers(docker_output: str) -> list[str]:
 
 def _parse_iowait(top_output: str) -> float | None:
     """Extract I/O wait percentage from top -bn1 output."""
-    # Look for: %Cpu(s):  1.0 us,  0.5 sy,  0.0 ni, 97.5 id,  1.0 wa, ...
     for line in top_output.splitlines():
         if "%Cpu" in line or "%cpu" in line.lower():
             match = re.search(r'(\d+\.?\d*)\s*wa', line)
@@ -432,7 +497,6 @@ def _count_oom(dmesg_output: str) -> int:
 
 def _parse_tcp_connections(ss_output: str) -> int | None:
     """Extract total established TCP connections from ss -s output."""
-    # ss -s output: "TCP:   150 (estab 42, closed 5, orphaned 0, ..."
     for line in ss_output.splitlines():
         if line.startswith("TCP:"):
             match = re.search(r'estab\s+(\d+)', line)
