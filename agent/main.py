@@ -136,6 +136,7 @@ def _build_core(config_path: str):
         WpSites,
     )
     from agent.tools.wp_deep_scan import WpDeepPerformance
+    from agent.tools.wp_elementor_diagnose import WpElementorDiagnose
     from agent.tools.wp_scan import WpScanAll
 
     agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
@@ -187,6 +188,7 @@ def _build_core(config_path: str):
     registry.register(WpFileIntegrity(inventory))
     registry.register(WpPerformance(inventory))
     registry.register(WpCleanupDry(inventory))
+    registry.register(WpElementorDiagnose(inventory))
 
     # Web server / SSL / DNS
     registry.register(SSLCertCheck(inventory))
