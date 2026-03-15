@@ -10,7 +10,7 @@
 #   bastion sessions                              List saved sessions
 #   bastion status                                Check if the agent is running
 #   bastion logs                                  View recent agent logs
-#   bastion update                                Pull latest code & restart
+#   bastion update                                Download latest code & restart
 #   bastion run                                   Start interactive (no daemon)
 #   bastion check-config                          Validate configuration
 #   bastion help                                  Show this help
@@ -63,7 +63,8 @@ show_help() {
     echo -e "  bastion logs                          View recent agent logs"
     echo -e "  bastion logs -f                       Follow logs in real time"
     echo -e "  bastion sessions                      List saved sessions"
-    echo -e "  bastion update                        Pull latest code & restart service"
+    echo -e "  bastion update                        Download latest code & restart"
+    echo -e "  bastion update <branch>              Update from a specific branch"
     echo -e "  bastion restart                       Restart the agent service"
     echo ""
     echo -e "${BOLD}Advanced:${RESET}"
@@ -158,41 +159,122 @@ cmd_update() {
 
     check_install
 
-    # Pull latest code
-    echo -e "  ${CYAN}[1/4]${RESET} Pulling latest code..."
-    cd "$INSTALL_DIR"
-    git pull origin main --quiet 2>&1 && \
-        echo -e "  ${GREEN}[+]${RESET} Code updated" || {
-            echo -e "  ${RED}[x]${RESET} Git pull failed" >&2
-            exit 1
-        }
+    local BRANCH="${2:-main}"
+    local REPO_OWNER="rifle-ak"
+    local REPO_NAME="Bastion-Server"
+    local TARBALL_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${BRANCH}.tar.gz"
 
-    # Reinstall Python package (picks up new dependencies + code)
-    echo -e "  ${CYAN}[2/4]${RESET} Installing dependencies..."
-    "${INSTALL_DIR}/venv/bin/pip" install --quiet -r requirements.txt
-    "${INSTALL_DIR}/venv/bin/pip" install --quiet -e .
+    # Record current version
+    local CURRENT_VERSION
+    CURRENT_VERSION=$("${INSTALL_DIR}/venv/bin/bastion-agent" --version 2>&1 | tail -1 || echo "unknown")
+    echo -e "  ${DIM}Current: ${CURRENT_VERSION}${RESET}"
+    echo -e "  ${DIM}Branch:  ${BRANCH}${RESET}"
+    echo ""
+
+    # ── 1. Download tarball ──
+    echo -e "  ${CYAN}[1/5]${RESET} Downloading latest code..."
+    local TMPDIR
+    TMPDIR=$(mktemp -d -t bastion-update-XXXXXX)
+    trap 'rm -rf "${TMPDIR}"' RETURN
+
+    local TAR_PATH="${TMPDIR}/update.tar.gz"
+    if ! curl -sfL --max-time 60 -o "${TAR_PATH}" "${TARBALL_URL}"; then
+        echo -e "  ${RED}[x]${RESET} Download failed. Check internet and branch name." >&2
+        exit 1
+    fi
+
+    local TAR_SIZE
+    TAR_SIZE=$(stat -c%s "${TAR_PATH}" 2>/dev/null || stat -f%z "${TAR_PATH}" 2>/dev/null || echo 0)
+    if [[ "${TAR_SIZE}" -lt 1024 ]]; then
+        echo -e "  ${RED}[x]${RESET} Download too small (${TAR_SIZE} bytes) — likely a 404." >&2
+        exit 1
+    fi
+    echo -e "  ${GREEN}[+]${RESET} Downloaded $((TAR_SIZE / 1024))KB"
+
+    # ── 2. Extract ──
+    local EXTRACT_DIR="${TMPDIR}/extracted"
+    mkdir -p "${EXTRACT_DIR}"
+    if ! tar -xzf "${TAR_PATH}" -C "${EXTRACT_DIR}"; then
+        echo -e "  ${RED}[x]${RESET} Failed to extract tarball." >&2
+        exit 1
+    fi
+
+    local SOURCE_DIR
+    SOURCE_DIR=$(find "${EXTRACT_DIR}" -mindepth 1 -maxdepth 1 -type d | head -1)
+    if [[ -z "${SOURCE_DIR}" || ! -f "${SOURCE_DIR}/agent/__init__.py" ]]; then
+        echo -e "  ${RED}[x]${RESET} Archive doesn't look like bastion-agent." >&2
+        exit 1
+    fi
+
+    # ── 3. Replace code ──
+    echo -e "  ${CYAN}[2/5]${RESET} Replacing code..."
+
+    # Stop service first
+    local SERVICE_WAS_RUNNING=false
+    if systemctl is-active --quiet bastion-agent 2>/dev/null; then
+        SERVICE_WAS_RUNNING=true
+        systemctl stop bastion-agent
+    fi
+
+    # Replace agent/ directory
+    rm -rf "${INSTALL_DIR}/agent"
+    cp -r "${SOURCE_DIR}/agent" "${INSTALL_DIR}/agent"
+
+    # Replace tests/, scripts/, systemd/ if present
+    for dirname in tests scripts systemd; do
+        if [[ -d "${SOURCE_DIR}/${dirname}" ]]; then
+            rm -rf "${INSTALL_DIR}/${dirname}"
+            cp -r "${SOURCE_DIR}/${dirname}" "${INSTALL_DIR}/${dirname}"
+        fi
+    done
+
+    # Replace top-level files
+    for fname in pyproject.toml requirements.txt install.sh README.md CLAUDE.md; do
+        if [[ -f "${SOURCE_DIR}/${fname}" ]]; then
+            cp "${SOURCE_DIR}/${fname}" "${INSTALL_DIR}/${fname}"
+        fi
+    done
+
+    chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
+    echo -e "  ${GREEN}[+]${RESET} Code replaced"
+
+    # ── 4. Install dependencies ──
+    echo -e "  ${CYAN}[3/5]${RESET} Installing dependencies..."
+    "${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip setuptools wheel
+    "${INSTALL_DIR}/venv/bin/pip" install --quiet -r "${INSTALL_DIR}/requirements.txt"
+    "${INSTALL_DIR}/venv/bin/pip" install --quiet -e "${INSTALL_DIR}"
     echo -e "  ${GREEN}[+]${RESET} Dependencies updated"
 
-    # Update systemd service file
-    echo -e "  ${CYAN}[3/4]${RESET} Updating service..."
-    cp "${INSTALL_DIR}/systemd/bastion-agent.service" /etc/systemd/system/bastion-agent.service
-    systemctl daemon-reload
-    echo -e "  ${GREEN}[+]${RESET} Service file updated"
+    # ── 5. Update service + launcher ──
+    echo -e "  ${CYAN}[4/5]${RESET} Updating service..."
+    if [[ -f "${INSTALL_DIR}/systemd/bastion-agent.service" ]]; then
+        cp "${INSTALL_DIR}/systemd/bastion-agent.service" /etc/systemd/system/bastion-agent.service
+        systemctl daemon-reload
+    fi
+
+    # Update the bastion launcher itself
+    if [[ -f "${INSTALL_DIR}/scripts/bastion" ]]; then
+        install -m 755 "${INSTALL_DIR}/scripts/bastion" /usr/local/bin/bastion
+    fi
 
     # Ensure directories exist with correct ownership
     mkdir -p "${INSTALL_DIR}/sessions" "${INSTALL_DIR}/logs"
     chown "${AGENT_USER}:${AGENT_USER}" "${INSTALL_DIR}/sessions" "${INSTALL_DIR}/logs"
+    echo -e "  ${GREEN}[+]${RESET} Service file updated"
 
-    # Restart
-    echo -e "  ${CYAN}[4/4]${RESET} Restarting agent..."
-    systemctl restart bastion-agent
+    # ── 6. Restart ──
+    echo -e "  ${CYAN}[5/5]${RESET} Restarting agent..."
+    systemctl start bastion-agent
     sleep 1
 
     if systemctl is-active bastion-agent > /dev/null 2>&1; then
         echo ""
+        local NEW_VERSION
+        NEW_VERSION=$("${INSTALL_DIR}/venv/bin/bastion-agent" --version 2>&1 | tail -1)
         echo -e "  ${GREEN}${BOLD}Update complete — agent is running${RESET}"
-        VERSION=$("${INSTALL_DIR}/venv/bin/bastion-agent" --version 2>&1 | tail -1)
-        echo -e "  ${DIM}${VERSION}${RESET}"
+        echo -e "  ${DIM}${NEW_VERSION}${RESET}"
+        echo ""
+        echo -e "  ${DIM}Config files in ${CONFIG_DIR}/ were NOT modified.${RESET}"
     else
         echo ""
         echo -e "  ${RED}${BOLD}Agent failed to start after update${RESET}"
@@ -265,7 +347,7 @@ case "$1" in
         cmd_sessions
         ;;
     update)
-        cmd_update
+        cmd_update "$@"
         ;;
     restart)
         cmd_restart

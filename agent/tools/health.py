@@ -135,9 +135,19 @@ async def _check_server(server_info: ServerInfo) -> tuple[str, bool]:
     # Network connection counts
     commands["connections"] = "ss -s"
 
-    # Service checks
+    # Service checks — resolve common aliases to actual systemd unit names
+    _SERVICE_ALIASES: dict[str, list[str]] = {
+        "mysql": ["mysqld", "mariadb", "mysql"],
+        "httpd": ["httpd", "apache2", "lshttpd", "litespeed"],
+    }
     for svc in server_info.definition.services:
-        if svc != "docker":
+        if svc == "docker":
+            continue
+        if svc in _SERVICE_ALIASES:
+            # Try all known names; the analyzer will pick the first that works
+            for alias in _SERVICE_ALIASES[svc]:
+                commands[f"svc:{svc}:{alias}"] = f"systemctl is-active {alias}"
+        else:
             commands[f"svc:{svc}"] = f"systemctl is-active {svc}"
 
     # ── Webhost-specific checks ──
@@ -329,14 +339,42 @@ def _analyze(
         issues.append(f"✗ Docker: {containers_raw[6:]}")
 
     # --- Services ---
+    # Group aliased services (svc:mysql:mysqld, svc:mysql:mariadb, etc.)
+    # A service is healthy if ANY alias is active.
+    svc_results: dict[str, dict[str, str]] = {}
     for key, val in sorted(raw.items()):
         if not key.startswith("svc:"):
             continue
-        svc_name = key[4:]
-        if val.startswith("ERROR:"):
-            issues.append(f"✗ {svc_name}: {val[6:]}")
-        elif val.strip() != "active":
-            issues.append(f"✗ {svc_name}: {val.strip()}")
+        parts = key.split(":", 2)
+        if len(parts) == 3:
+            # Aliased: svc:<logical>:<actual>
+            svc_name = parts[1]
+            svc_results.setdefault(svc_name, {})[parts[2]] = val
+        else:
+            # Direct: svc:<name>
+            svc_name = parts[1]
+            svc_results.setdefault(svc_name, {})[svc_name] = val
+
+    for svc_name, alias_results in svc_results.items():
+        any_active = any(v.strip() == "active" for v in alias_results.values())
+        if any_active:
+            # Find which alias is the active one
+            active_alias = next(
+                a for a, v in alias_results.items() if v.strip() == "active"
+            )
+            if active_alias != svc_name:
+                lines.append(f"{svc_name}: active (as {active_alias})")
+        else:
+            # None active — report the logical service name
+            all_errors = all(v.startswith("ERROR:") for v in alias_results.values())
+            if all_errors:
+                issues.append(f"✗ {svc_name}: service not found")
+            else:
+                statuses = ", ".join(
+                    f"{a}={v.strip()}" for a, v in alias_results.items()
+                    if not v.startswith("ERROR:")
+                )
+                issues.append(f"✗ {svc_name}: {statuses}")
 
     # --- Webhost-specific ---
     _analyze_webhost(raw, lines, issues)

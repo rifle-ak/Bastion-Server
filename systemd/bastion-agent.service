@@ -8,7 +8,7 @@ Type=simple
 User=claude-agent
 Group=claude-agent
 WorkingDirectory=/opt/bastion-agent
-ExecStart=/opt/bastion-agent/venv/bin/bastion-agent daemon --config-dir /opt/bastion-agent/config
+ExecStart=/opt/bastion-agent/venv/bin/bastion-agent daemon --config-dir /etc/bastion-agent
 Restart=on-failure
 RestartSec=10
 
