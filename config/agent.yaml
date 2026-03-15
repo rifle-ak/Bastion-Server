@@ -1,7 +1,7 @@
 model: claude-sonnet-4-5-20250929
 max_tokens: 4096
-max_tool_iterations: 10
-command_timeout: 30
+max_tool_iterations: 40
+command_timeout: 120
 audit_log_path: ./logs/audit.jsonl
 approval_mode: interactive
 max_conversation_tokens: 25000
