@@ -238,6 +238,15 @@ cmd_update() {
     chmod +x "${INSTALL_DIR}/scripts/"*.sh 2>/dev/null || true
     echo -e "  ${GREEN}[+]${RESET} Code replaced"
 
+    # Sync operational config files (permissions, agent behavior)
+    # NEVER overwrite servers.yaml — that has user-specific infrastructure data
+    for cfg in permissions.yaml agent.yaml; do
+        if [[ -f "${SOURCE_DIR}/config/${cfg}" ]]; then
+            cp "${SOURCE_DIR}/config/${cfg}" "${CONFIG_DIR}/${cfg}"
+            echo -e "  ${GREEN}[+]${RESET} Updated ${CONFIG_DIR}/${cfg}"
+        fi
+    done
+
     # ── 4. Install dependencies ──
     echo -e "  ${CYAN}[3/5]${RESET} Installing dependencies..."
     "${INSTALL_DIR}/venv/bin/pip" install --quiet --upgrade pip setuptools wheel

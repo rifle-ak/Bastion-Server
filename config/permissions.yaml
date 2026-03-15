@@ -438,6 +438,7 @@ roles:
       - "curl -sL *"
       # ── File checks ──
       - "test -f *"
+      - "test -d *"
       # General
       # File system search (within allowed paths)
       - "find /var/log *"
