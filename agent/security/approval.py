@@ -27,6 +27,14 @@ ALWAYS_SAFE_TOOLS: frozenset[str] = frozenset({
     "query_metrics",
 })
 
+# Tools that ALWAYS require approval (destructive by nature).
+# Mapped to a callable that checks whether a specific invocation
+# actually needs approval, or True to always require it.
+ALWAYS_REQUIRE_APPROVAL: dict[str, Any] = {
+    # self_update: only the "update" action is destructive
+    "self_update": lambda inp: inp.get("action") == "update",
+}
+
 
 def requires_approval(
     tool_name: str,
@@ -45,6 +53,14 @@ def requires_approval(
     """
     if tool_name in ALWAYS_SAFE_TOOLS:
         return False
+
+    if tool_name in ALWAYS_REQUIRE_APPROVAL:
+        checker = ALWAYS_REQUIRE_APPROVAL[tool_name]
+        if callable(checker):
+            if checker(tool_input):
+                return True
+        elif checker:
+            return True
 
     # Check all string values in the input against approval patterns
     values_to_check = _extract_string_values(tool_input)

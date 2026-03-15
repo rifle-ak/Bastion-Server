@@ -42,6 +42,19 @@ servers:
       - named
       - exim
 
+  webhost-02:
+    host: winnersonlylotto.com
+    role: webhost
+    user: claude-agent
+    key_path: ~/.ssh/keys/webhost-02_ed25519
+    description: "Winners Only Lotto — cPanel webhost"
+    services:
+      - cpanel
+      - httpd
+      - mysql
+      - named
+      - exim
+
   media-01:
     host: 24.129.90.46
     role: saltbox
