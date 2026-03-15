@@ -22,7 +22,7 @@ logger = structlog.get_logger()
 # Max characters to keep per tool result in message history.
 # The user still sees the full output — this only affects what we
 # send back to the API on subsequent turns to control token usage.
-_MAX_TOOL_RESULT_CHARS = 3000
+_MAX_TOOL_RESULT_CHARS = 2000
 
 _RATE_LIMIT_MAX_RETRIES = 3
 _RATE_LIMIT_BASE_DELAY = 2.0  # seconds
@@ -96,6 +96,11 @@ class ConversationClient:
         """
         self._messages.append({"role": "user", "content": message})
         await self._process_response()
+
+    async def cleanup(self) -> None:
+        """Clean up resources like SSH connection pools."""
+        from agent.tools.docker_tools import close_ssh_pool
+        await close_ssh_pool()
 
     def reset(self) -> None:
         """Clear conversation history (called between daemon sessions)."""

@@ -25,11 +25,7 @@ class ReadFile(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Read the contents of a file on a server. The path must be within "
-            "the allowed read directories for that server's role. Returns up to "
-            "'lines' lines from the file. Use server 'localhost' for the bastion."
-        )
+        return "Read a file on a server. Path must be in the role's allowed read dirs."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -37,15 +33,15 @@ class ReadFile(BaseTool):
             "properties": {
                 "server": {
                     "type": "string",
-                    "description": "Server name from the inventory (e.g. 'localhost', 'gameserver-01').",
+                    "description": "Server name (e.g. 'localhost', 'gameserver-01').",
                 },
                 "path": {
                     "type": "string",
-                    "description": "Absolute path to the file to read.",
+                    "description": "Absolute file path.",
                 },
                 "lines": {
                     "type": "integer",
-                    "description": "Maximum number of lines to return (default 100).",
+                    "description": "Max lines to return (default 100).",
                     "default": 100,
                 },
             },

@@ -5,11 +5,19 @@ roles:
       - "df -h"
       - "df -h *"
       - "free -h"
+      - "free -m"
       - "ps aux"
       - "ps aux *"
       - "top -bn1"
+      - "top -b -n *"
+      - "nproc"
       - "dmesg *"
       - "ping -c * *"
+      - "ss *"
+      - "ss"
+      - "ss -s"
+      - "ss -ti"
+      - "curl *"
       # Network diagnostics
       - "ss *"
       - "ss -tulpn"
@@ -67,6 +75,8 @@ roles:
       # File reading
       - "cat /var/log/*"
       - "tail -n * /var/log/*"
+      - "dig *"
+      - "echo | openssl *"
       - "tail -f /var/log/*"
       - "cat /opt/*"
       - "tail -n * /opt/*"
@@ -81,10 +91,12 @@ roles:
 
   game-server:
     allowed_commands:
+      # ── System health & diagnostics ──
       - "uptime"
       - "df -h"
       - "df -h *"
       - "free -h"
+      - "free -m"
       - "ps aux"
       - "ps aux *"
       - "top -bn1"
@@ -94,12 +106,36 @@ roles:
       - "iostat *"
       - "vmstat *"
       - "mpstat *"
+      - "w"
+      - "who"
+      - "last *"
+      - "last"
+      # ── Filesystem browsing ──
+      - "ls *"
+      - "ls"
+      - "du -sh *"
+      - "du -h *"
+      - "du -sh /var/lib/pterodactyl/*"
+      - "head -n * *"
+      # ── Networking ──
       - "ss *"
+      - "ss"
       - "ip addr"
       - "ip addr *"
       - "ip route"
       - "ip route *"
+      - "ip -s link"
+      - "ip -s link *"
       - "lsof *"
+      - "lsof -i *"
+      - "iptables -L"
+      - "iptables -L *"
+      - "iptables -S"
+      - "iptables -S *"
+      - "iptables -nL"
+      - "iptables -nL *"
+      - "nft list *"
+      # ── Systemd services ──
       - "netstat *"
       - "netstat -tulpn"
       - "pgrep *"
@@ -107,9 +143,13 @@ roles:
       - "systemctl list-units *"
       - "systemctl list-units --failed"
       - "systemctl is-active *"
+      - "systemctl show *"
+      - "systemctl cat *"
       - "journalctl -u * --no-pager -n *"
       - "journalctl -u * --no-pager -n * --since *"
       - "journalctl -u * --no-pager --since *"
+      - "journalctl --no-pager -n * -p *"
+      # ── Docker: container listing & inspection ──
       - "journalctl -xe"
       - "journalctl -xe --no-pager"
       - "journalctl -xe --no-pager -n *"
@@ -121,17 +161,22 @@ roles:
       - "docker stats --no-stream"
       - "docker stats --no-stream *"
       - "docker top *"
+      - "docker port *"
+      - "docker diff *"
+      - "docker images"
+      - "docker images *"
+      - "docker history *"
+      - "docker info"
+      - "docker system df"
+      - "docker system df *"
+      # ── Docker: networking & volumes ──
       - "docker network ls"
       - "docker network ls *"
       - "docker network inspect *"
       - "docker volume ls"
       - "docker volume ls *"
       - "docker volume inspect *"
-      - "docker port *"
-      - "docker diff *"
-      - "docker images"
-      - "docker images *"
-      # Read-only docker exec commands for container diagnostics
+      # ── Docker exec: read-only container diagnostics ──
       - "docker exec * ps *"
       - "docker exec * ps"
       - "docker exec * top *"
@@ -140,6 +185,7 @@ roles:
       - "docker exec * free *"
       - "docker exec * free"
       - "docker exec * uptime"
+      - "docker exec * date"
       - "docker exec * cat *"
       - "docker exec * head *"
       - "docker exec * tail *"
@@ -163,12 +209,28 @@ roles:
       - "docker exec * ip *"
       - "docker exec * netstat *"
       - "docker exec * lsof *"
-      # Pterodactyl Wings diagnostics
+      # ── Pterodactyl Wings CLI ──
       - "wings diagnostics"
       - "wings diagnostics *"
+      - "wings version"
+      # ── Pterodactyl: file reads (host-side paths) ──
       - "cat /etc/pterodactyl/*"
+      - "cat /var/log/pterodactyl/*"
+      - "cat /var/lib/pterodactyl/*"
       - "cat /srv/pterodactyl/*"
+      - "head -n * /var/log/pterodactyl/*"
+      - "head -n * /var/lib/pterodactyl/*"
+      - "tail -n * /var/log/pterodactyl/*"
+      - "tail -n * /var/lib/pterodactyl/*"
       - "tail -n * /srv/pterodactyl/*"
+      - "ls -la /var/lib/pterodactyl/*"
+      - "ls -lah /var/lib/pterodactyl/*"
+      - "ls -la /etc/pterodactyl/*"
+      - "ls -la /srv/pterodactyl/*"
+      - "du -sh /var/lib/pterodactyl/volumes/*"
+      - "du -sh /var/lib/pterodactyl/backups/*"
+      - "find /var/lib/pterodactyl/* *"
+      # ── Pterodactyl RCON — send commands to game console (REQUIRES APPROVAL) ──
       - "tail -f /srv/pterodactyl/*"
       # Pterodactyl volume access (game server files, configs, logs)
       - "cat /var/lib/pterodactyl/volumes/*"
@@ -184,13 +246,20 @@ roles:
       - "ls /var/lib/pterodactyl/volumes/*"
       # Pterodactyl: send commands to game server console (REQUIRES APPROVAL)
       - "docker exec * rcon *"
+      # ── Container management (REQUIRES APPROVAL) ──
       - "docker restart *"
+      - "docker start *"
+      - "docker stop *"
+      - "docker kill *"
       - "systemctl restart *"
+      - "systemctl stop *"
     allowed_paths_read:
       - /var/log/
+      - /var/log/pterodactyl/
       - /etc/pterodactyl/
       - /srv/pterodactyl/
       - /var/lib/pterodactyl/
+      - /tmp/pterodactyl/
     allowed_paths_write: []
 
   monitoring:
@@ -269,15 +338,25 @@ roles:
 
   webhost:
     allowed_commands:
+      # ── System health ──
       - "uptime"
       - "df -h"
       - "df -h *"
       - "free -h"
+      - "free -m"
       - "ps aux"
       - "ps aux *"
       - "top -bn1"
+      - "top -b -n *"
       - "dmesg *"
       - "ping -c * *"
+      - "nproc"
+      - "ss *"
+      - "ss"
+      - "ss -s"
+      - "iostat *"
+      - "vmstat *"
+      # ── Systemd ──
       # Network diagnostics
       - "ss *"
       - "ss -tulpn"
@@ -299,29 +378,66 @@ roles:
       - "systemctl restart *"                       # REQUIRES APPROVAL
       - "journalctl -u * --no-pager -n *"
       - "journalctl -u * --no-pager -n * --since *"
+      # ── cPanel/WHM API ──
       - "journalctl -u * --no-pager --since *"
       - "journalctl -xe"
       - "journalctl -xe --no-pager"
       - "journalctl -xe --no-pager -n *"
       # cPanel/WHM
       - "/usr/local/cpanel/bin/whmapi1 *"
+      - "whmapi1 *"
       - "/scripts/restartsrv_*"                     # REQUIRES APPROVAL
       - "/usr/local/cpanel/bin/cplogin"
-      - "whmapi1 *"
-      # Apache
+      # ── Apache/LiteSpeed ──
       - "httpd -S"
       - "httpd -t"
       - "apachectl status"
       - "apachectl configtest"
-      # MySQL
+      - "litespeed -v"
+      # ── MySQL/MariaDB ──
       - "mysqladmin status"
       - "mysqladmin processlist"
-      # DNS
+      - "mysqladmin extended-status"
+      - "du -sh /var/lib/mysql/*"
+      - "mysqlcheck --check *"
+      - "mysqlcheck --repair *"                     # REQUIRES APPROVAL
+      - "mysqlcheck --optimize *"                   # REQUIRES APPROVAL
+      # ── DNS ──
       - "named-checkconf"
       - "named-checkzone *"
-      # Mail
+      - "dig *"
+      # ── Mail ──
       - "exim -bpc"
       - "exim -bp"
+      - "exim -bpr *"
+      # ── SSL ──
+      - "echo | openssl *"
+      # ── WordPress WP-CLI ──
+      - "runuser -u * -- wp *"
+      - "find /home/*/public_html -maxdepth * -name * -type *"
+      # ── WordPress security scanning ──
+      - "find /home/*/public_html/wp-content/uploads *"
+      - "find /home/*/public_html -type f -perm *"
+      - "find /home/*/public_html/wp-includes *"
+      - "find /home/*/public_html/wp-admin *"
+      - "grep -rlc * /home/*/public_html/wp-content/*"
+      - "find /home/*/public_html/wp-content -name *"
+      # ── cPanel account investigation ──
+      - "du -sh /home/*/"
+      - "du -sh /home/*/*"
+      - "find /home/* -type f -size *"
+      - "find /home/* -type f -printf *"
+      - "find /home/* -type f 2>/dev/null | wc *"
+      - "cat /home/*/.cpanel/forwarders"
+      - "du -sh /home/*/mail/*"
+      - "du -sh /home/*/mail/*/*"
+      - "ls /opt/cpanel/*/root/usr/bin/php *"
+      # ── Probes & debugging ──
+      - "curl -sI *"
+      - "curl -so *"
+      - "curl -sL *"
+      # ── File checks ──
+      - "test -f *"
       # General
       # File system search (within allowed paths)
       - "find /var/log *"
@@ -333,6 +449,18 @@ roles:
       - "tail -n * /var/log/*"
       - "tail -f /var/log/*"
       - "tail -n * /usr/local/cpanel/logs/*"
+      - "tail -n * /etc/httpd/logs/*"
+      - "tail -n * /var/log/apache2/*"
+      - "tail -n * /var/log/httpd/*"
+      - "tail -n * /usr/local/apache/logs/*"
+      - "tail -n * /var/log/nginx/*"
+      - "tail -n * /var/log/mysql/*"
+      - "tail -n * /var/lib/mysql/*"
+      - "tail -n * /var/log/mariadb/*"
+      - "head -n * *"
+      - "ls *"
+      - "ls"
+      - "du -sh *"
       - "tail -f /usr/local/cpanel/logs/*"
       - "cat /usr/local/cpanel/logs/*"
     allowed_paths_read:
@@ -343,6 +471,9 @@ roles:
       - /usr/local/cpanel/logs/
       - /var/cpanel/
       - /etc/cpanel/
+      - /etc/apache2/
+      - /etc/nginx/
+      - /home/
     allowed_paths_write: []
 
   saltbox:
@@ -427,6 +558,7 @@ roles:
 approval_required_patterns:
   - "restart"
   - "stop"
+  - "start"
   - "kill"
   - "pkill"
   - "rm "
@@ -438,3 +570,8 @@ approval_required_patterns:
   - "tee "
   - ">"
   - ">>"
+  - "rcon"
+  - "repair"
+  - "optimize"
+  - "pterodactyl_power"
+  - "pterodactyl_command"

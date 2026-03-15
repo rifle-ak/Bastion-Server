@@ -49,11 +49,7 @@ class QueryMetrics(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Query VictoriaMetrics using PromQL. Returns time series data "
-            "for the specified query and time range. The monitoring server "
-            "must have a metrics_url configured."
-        )
+        return "Query VictoriaMetrics with PromQL. Returns time series data."
 
     @property
     def parameters(self) -> dict[str, Any]:

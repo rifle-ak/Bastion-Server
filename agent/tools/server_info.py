@@ -25,10 +25,7 @@ class ListServers(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "List all servers in the inventory with their roles, hosts, "
-            "and descriptions. No parameters required. Always permitted."
-        )
+        return "List all servers with roles and descriptions. Always permitted."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -55,10 +52,7 @@ class GetServerStatus(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Get a quick health summary for a server: uptime, load average, "
-            "disk usage, and memory usage. Works for both local and remote servers."
-        )
+        return "Quick health summary: uptime, load, disk, memory. For deeper checks use health_check."
 
     @property
     def parameters(self) -> dict[str, Any]:

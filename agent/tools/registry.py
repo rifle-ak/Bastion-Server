@@ -105,15 +105,50 @@ class ToolRegistry:
         self._audit.log_attempt(tool_name, sanitized)
 
         # 3. Check allowlist for command/path-bearing tools
-        try:
-            self._check_allowlist(tool_name, sanitized)
-        except AllowlistDenied as e:
-            self._audit.log_denied(tool_name, sanitized, reason=f"allowlist: {e}")
-            return {"error": f"Operation not permitted by security policy: {e}"}
+        #    Skip shell-command allowlist for pterodactyl_command — it uses
+        #    the game-aware console allowlist instead (checked in execute()).
+        if tool_name != "pterodactyl_command":
+            try:
+                self._check_allowlist(tool_name, sanitized)
+            except AllowlistDenied as e:
+                self._audit.log_denied(tool_name, sanitized, reason=f"allowlist: {e}")
+                return {"error": f"Operation not permitted by security policy: {e}"}
 
         # 4. Check if human approval is required
+        #    Console allowlist can pre-approve safe game commands (e.g. "list",
+        #    "tps") so operators aren't pestered for read-only queries.
+        skip_approval = False
+        if tool_name == "pterodactyl_command":
+            from agent.security.console_allowlist import (
+                CommandAction,
+                get_console_allowlist,
+            )
+            allowlist = get_console_allowlist()
+            check = allowlist.check_command(
+                sanitized.get("command", ""),
+                game_type=sanitized.get("game_type", "unknown"),
+                container_info=sanitized.get("identifier", ""),
+            )
+            if check.action == CommandAction.ALLOW:
+                skip_approval = True
+                logger.info(
+                    "console_command_preapproved",
+                    command=sanitized.get("command"),
+                    game_type=check.game_type,
+                    rule=check.matched_rule,
+                )
+            elif check.action == CommandAction.DENY:
+                self._audit.log_denied(
+                    tool_name, sanitized,
+                    reason=f"console_allowlist: {check.reason}",
+                )
+                return {
+                    "error": f"Console command blocked: {check.reason}. "
+                    "Use pterodactyl_power to stop/restart servers."
+                }
+
         approval_patterns = self._inventory.get_approval_patterns()
-        if requires_approval(tool_name, sanitized, approval_patterns):
+        if not skip_approval and requires_approval(tool_name, sanitized, approval_patterns):
             approved = await request_approval(
                 tool_name, sanitized, self._config.approval_mode
             )

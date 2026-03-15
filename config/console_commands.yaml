@@ -1,0 +1,46 @@
+# Console Command Allowlist — Game-Specific Rules
+#
+# Controls which game console commands the agent can send via
+# pterodactyl_command. Three tiers:
+#
+#   safe_commands:     Run without approval (read-only, informational)
+#   approval_commands: Need operator approval (destructive but useful)
+#   blocked_commands:  Never allowed (use pterodactyl_power instead)
+#
+# Built-in defaults exist for: minecraft_java, minecraft_bedrock, rust,
+# valheim, source (CS2/GMOD/TF2), ark, terraria. You only need to
+# define rules here to OVERRIDE or EXTEND the defaults.
+#
+# detect_patterns: Glob patterns matched against container name/image
+# to auto-detect the game type. Case-insensitive.
+#
+# Examples:
+#
+# games:
+#   # Add a custom game type
+#   my_custom_game:
+#     detect_patterns:
+#       - "*mygame*"
+#     safe_commands:
+#       - "status"
+#       - "info"
+#       - "players"
+#     approval_commands:
+#       - "kick *"
+#       - "ban *"
+#     blocked_commands:
+#       - "stop"
+#       - "quit"
+#
+#   # Override Minecraft defaults (extends built-in rules)
+#   minecraft_java:
+#     safe_commands:
+#       - "say *"     # Make say safe instead of needing approval
+#       - "tps"
+#       - "list"
+#     blocked_commands:
+#       - "stop"
+#       - "op *"      # Block op entirely (instead of approval)
+
+# Uncomment and edit below to customize:
+# games: {}

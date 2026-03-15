@@ -58,13 +58,86 @@ def _build_core(config_path: str):
     from agent.inventory import Inventory
     from agent.prompts import build_system_prompt
     from agent.security.audit import AuditLogger
+    from agent.tools.cpanel import (
+        CpanelBackupStatus,
+        CpanelDiskQuota,
+        CpanelDomainLookup,
+        CpanelEmailDeliverability,
+        CpanelEmailDiag,
+        CpanelListAccounts,
+        CpanelAccountInfo,
+        CpanelListDomains,
+        CpanelMailQueue,
+        CpanelPhpVersion,
+        CpanelSSLStatus,
+        CpanelSuspensionInfo,
+    )
+    from agent.tools.database import (
+        MySQLDatabaseSizes,
+        MySQLProcessList,
+        MySQLSlowQueries,
+        MySQLStatus,
+        MySQLTableCheck,
+        MySQLTableOptimize,
+        MySQLTableRepair,
+    )
+    from agent.tools.backup_audit import BackupAudit
+    from agent.tools.blast_radius import BlastRadius
+    from agent.tools.config_diff import ConfigBaseline, ConfigDiff
+    from agent.tools.cron_audit import CronAudit
+    from agent.tools.customer_impact import CustomerImpact
+    from agent.tools.diagnose import DiagnoseSite
     from agent.tools.docker_tools import DockerLogs, DockerPs
+    from agent.tools.explain import ExplainToClient, ShiftHandoff
+    from agent.tools.game_diagnose import GameServerDiagnose
+    from agent.tools.incident_report import IncidentReport
+    from agent.tools.incident_timeline import IncidentTimeline
+    from agent.tools.infrastructure_pulse import InfrastructurePulse
+    from agent.tools.mod_conflict_check import ModConflictCheck
+    from agent.tools.log_correlate import LogCorrelate
+    from agent.tools.page_debug import PageDebug
+    from agent.tools.pterodactyl_overview import PterodactylOverview
     from agent.tools.files import ReadFile
+    from agent.tools.health import HealthCheck
     from agent.tools.local import RunLocalCommand
     from agent.tools.monitoring import QueryMetrics
+    from agent.tools.pterodactyl import (
+        PterodactylConsoleCommand,
+        PterodactylListServers,
+        PterodactylPowerAction,
+        PterodactylServerStatus,
+    )
     from agent.tools.registry import ToolRegistry
+    from agent.tools.resource_rightsizing import ResourceRightsizing
+    from agent.tools.security_audit import SecurityAudit
     from agent.tools.server_info import GetServerStatus, ListServers
     from agent.tools.systemd import ServiceJournal, ServiceStatus
+    from agent.tools.uptime_probe import UptimeProbe
+    from agent.tools.what_changed import WhatChanged
+    from agent.tools.webserver import (
+        AccessLogAnalysis,
+        ApacheStatus,
+        DNSCheck,
+        ModSecurityLog,
+        SSLCertCheck,
+        WebErrorLog,
+    )
+    from agent.tools.wordpress import (
+        WpCleanupDry,
+        WpCoreUpdate,
+        WpCronStatus,
+        WpDbCheck,
+        WpFileIntegrity,
+        WpHealth,
+        WpPerformance,
+        WpPluginStatus,
+        WpSearchReplace,
+        WpSecurityScan,
+        WpSites,
+    )
+    from agent.tools.wp_deep_scan import WpDeepPerformance
+    from agent.tools.wp_elementor_diagnose import WpElementorDiagnose
+    from agent.tools.wp_scan import WpScanAll
 
     agent_cfg, servers_cfg, permissions_cfg = load_all_config(config_path)
     inventory = Inventory(servers_cfg, permissions_cfg)
@@ -72,15 +145,126 @@ def _build_core(config_path: str):
 
     # Build tool registry and register all tools
     registry = ToolRegistry(agent_cfg, inventory, audit)
+
+    # Core tools
     registry.register(RunLocalCommand())
     registry.register(ReadFile(inventory))
     registry.register(ListServers(inventory))
     registry.register(GetServerStatus(inventory))
+    registry.register(HealthCheck(inventory))
+
+    # Docker & systemd
     registry.register(DockerPs(inventory))
     registry.register(DockerLogs(inventory))
     registry.register(ServiceStatus(inventory))
     registry.register(ServiceJournal(inventory))
+
+    # Monitoring
     registry.register(QueryMetrics(inventory))
+
+    # cPanel/WHM
+    registry.register(CpanelListAccounts(inventory))
+    registry.register(CpanelAccountInfo(inventory))
+    registry.register(CpanelSSLStatus(inventory))
+    registry.register(CpanelBackupStatus(inventory))
+    registry.register(CpanelEmailDeliverability(inventory))
+    registry.register(CpanelMailQueue(inventory))
+    registry.register(CpanelDomainLookup(inventory))
+    registry.register(CpanelListDomains(inventory))
+    registry.register(CpanelSuspensionInfo(inventory))
+    registry.register(CpanelDiskQuota(inventory))
+    registry.register(CpanelPhpVersion(inventory))
+    registry.register(CpanelEmailDiag(inventory))
+
+    # WordPress
+    registry.register(WpSites(inventory))
+    registry.register(WpHealth(inventory))
+    registry.register(WpPluginStatus(inventory))
+    registry.register(WpCoreUpdate(inventory))
+    registry.register(WpDbCheck(inventory))
+    registry.register(WpCronStatus(inventory))
+    registry.register(WpSearchReplace(inventory))
+    registry.register(WpSecurityScan(inventory))
+    registry.register(WpFileIntegrity(inventory))
+    registry.register(WpPerformance(inventory))
+    registry.register(WpCleanupDry(inventory))
+    registry.register(WpElementorDiagnose(inventory))
+
+    # Web server / SSL / DNS
+    registry.register(SSLCertCheck(inventory))
+    registry.register(ApacheStatus(inventory))
+    registry.register(WebErrorLog(inventory))
+    registry.register(DNSCheck(inventory))
+    registry.register(AccessLogAnalysis(inventory))
+    registry.register(ModSecurityLog(inventory))
+
+    # MySQL/MariaDB
+    registry.register(MySQLStatus(inventory))
+    registry.register(MySQLProcessList(inventory))
+    registry.register(MySQLSlowQueries(inventory))
+    registry.register(MySQLDatabaseSizes(inventory))
+    registry.register(MySQLTableCheck(inventory))
+    registry.register(MySQLTableRepair(inventory))
+    registry.register(MySQLTableOptimize(inventory))
+
+    # Site diagnosis (one-shot)
+    registry.register(DiagnoseSite(inventory))
+
+    # Batch WordPress scanning
+    registry.register(WpScanAll(inventory))
+
+    # Pterodactyl Panel API
+    registry.register(PterodactylListServers(inventory))
+    registry.register(PterodactylServerStatus(inventory))
+    registry.register(PterodactylPowerAction(inventory))
+    registry.register(PterodactylConsoleCommand(inventory))
+
+    # Deep diagnostics
+    registry.register(GameServerDiagnose(inventory))
+    registry.register(WpDeepPerformance(inventory))
+    registry.register(PageDebug(inventory))
+
+    # Security & auditing
+    registry.register(SecurityAudit(inventory))
+    registry.register(CronAudit(inventory))
+
+    # Cross-server tools
+    registry.register(LogCorrelate(inventory))
+    registry.register(UptimeProbe(inventory))
+
+    # Incident response & investigation
+    registry.register(WhatChanged(inventory))
+    registry.register(IncidentTimeline(inventory))
+    registry.register(BlastRadius(inventory))
+    registry.register(InfrastructurePulse(inventory))
+
+    # Client communication & handoff
+    registry.register(ExplainToClient())
+    registry.register(ShiftHandoff())
+
+    # Ticket intake & incident reporting
+    from agent.tools.ticket_intake import TicketIntake
+    registry.register(TicketIntake())
+    registry.register(IncidentReport())
+
+    # Config management & compliance
+    registry.register(ConfigDiff(inventory))
+    registry.register(ConfigBaseline(inventory))
+
+    # Backup auditing
+    registry.register(BackupAudit(inventory))
+
+    # Pterodactyl cross-node overview
+    registry.register(PterodactylOverview(inventory))
+
+    # Customer impact mapping
+    registry.register(CustomerImpact(inventory))
+
+    # Resource rightsizing
+    registry.register(ResourceRightsizing(inventory))
+
+    # Game server mod/plugin conflict detection
+    registry.register(ModConflictCheck(inventory))
 
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
@@ -159,6 +343,7 @@ def run(config_dir: str | None, log_level: str | None) -> None:
     except KeyboardInterrupt:
         click.echo("\nSession interrupted.")
     finally:
+        asyncio.run(client.cleanup())
         audit.log_session_end()
         audit.close()
         logger.info("session_ended")
@@ -362,6 +547,400 @@ async def _run_daemon(agent_cfg, registry, system_prompt, audit, servers_cfg, so
     await ui.stop()
     audit.close()
     logger.info("daemon_exited")
+
+
+@cli.command()
+@click.option(
+    "--socket",
+    "socket_path",
+    type=click.Path(),
+    default="/run/bastion-agent/agent.sock",
+    help="Unix socket path of the running daemon.",
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    default=False,
+    help="Show full tool call details and results.",
+)
+@click.option(
+    "--resume", "-r",
+    "resume_id",
+    type=str,
+    default=None,
+    help="Resume a previous session by ID.",
+)
+def chat(socket_path: str, verbose: bool, resume_id: str | None) -> None:
+    """Start an interactive chat session with the agent.
+
+    Connects to the running daemon and provides a continuous
+    conversation REPL. Much more natural than sending one-off
+    messages with ``bastion-agent send``.
+
+    Examples:
+
+      bastion chat                     # start chatting
+
+      bastion chat -v                  # verbose tool output
+
+      bastion chat -r abc123def456     # resume a session
+    """
+    try:
+        asyncio.run(_send_message(
+            socket_path,
+            message=None,
+            interactive=True,
+            verbose=verbose,
+            resume_id=resume_id,
+        ))
+    except FileNotFoundError:
+        click.echo(f"Error: socket not found at {socket_path}. Is the daemon running?", err=True)
+        sys.exit(1)
+    except ConnectionRefusedError:
+        click.echo("Error: connection refused. Is the daemon running?", err=True)
+        sys.exit(1)
+    except ConnectionResetError:
+        click.echo("Error: connection reset by daemon. Try: bastion restart", err=True)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        click.echo("\nDisconnected.")
+
+
+@cli.command()
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to configuration directory.",
+)
+@click.option(
+    "--server", "-s",
+    "target_server",
+    type=str,
+    default="all",
+    help="Server to check, or 'all' (default: all).",
+)
+@click.option(
+    "--quiet", "-q",
+    is_flag=True,
+    default=False,
+    help="Only output issues (for cron/alerting).",
+)
+@click.option(
+    "--discord-webhook",
+    type=str,
+    default=None,
+    help="Discord webhook URL. Also reads DISCORD_WEBHOOK_URL env var.",
+)
+def monitor(config_dir: str | None, target_server: str, quiet: bool, discord_webhook: str | None) -> None:
+    """Run health checks directly — no daemon, no API, zero cost.
+
+    Loads config and runs checks against servers in parallel over SSH.
+    Designed for cron jobs and alerting pipelines.  Returns exit code 1
+    if any issues are found, 0 if all clear.
+
+    Examples:
+
+      bastion monitor                  # check all servers
+
+      bastion monitor -s gameserver-01 # check one server
+
+      bastion monitor -q               # only show issues (for cron)
+
+      bastion monitor --discord-webhook https://discord.com/api/webhooks/...
+
+      # Cron: check every 15 min, alert on issues via Discord
+      */15 * * * * DISCORD_WEBHOOK_URL=https://... /usr/local/bin/bastion monitor -q
+    """
+    config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
+
+    try:
+        _, servers_cfg, permissions_cfg = load_all_config(config_path)
+    except Exception as e:
+        click.echo(f"Config error: {e}", err=True)
+        sys.exit(2)
+
+    from agent.inventory import Inventory
+    from agent.tools.health import run_health_check
+
+    inventory = Inventory(servers_cfg, permissions_cfg)
+
+    try:
+        result = asyncio.run(run_health_check(inventory, target_server))
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+    output = result.output
+    if quiet:
+        # Only print lines with issue markers or server headers for context
+        filtered: list[str] = []
+        current_header = ""
+        header_printed = False
+        for line in output.splitlines():
+            if line.startswith("## "):
+                current_header = line
+                header_printed = False
+            elif any(marker in line for marker in ("⚠", "✗", "issue")):
+                if not header_printed and current_header:
+                    filtered.append(current_header)
+                    header_printed = True
+                filtered.append(line)
+        if filtered:
+            click.echo("\n".join(filtered))
+    else:
+        click.echo(output)
+
+    # Multi-channel alerting (Discord, Slack, email)
+    webhook_url = discord_webhook or os.environ.get("DISCORD_WEBHOOK_URL", "")
+    slack_url = os.environ.get("SLACK_WEBHOOK_URL", "")
+    email_to = os.environ.get("ALERT_EMAIL_TO", "")
+
+    if webhook_url or slack_url or email_to:
+        from agent.alerts import send_all_alerts
+        results = send_all_alerts(
+            output, result.exit_code,
+            discord_url=webhook_url,
+            slack_url=slack_url,
+            email_to=email_to,
+        )
+        if not quiet:
+            for channel, success in results.items():
+                status = "sent" if success else "FAILED"
+                click.echo(f"  {channel}: {status}")
+
+    sys.exit(result.exit_code)
+
+
+@cli.command(name="anomaly-monitor")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to configuration directory.",
+)
+@click.option(
+    "--loop",
+    "loop_seconds",
+    type=int,
+    default=0,
+    help="Run continuously every N seconds (0 = run once and exit).",
+)
+@click.option(
+    "--discord-webhook",
+    type=str,
+    default=None,
+    help="Discord webhook URL for anomaly alerts.",
+)
+@click.option(
+    "--quiet", "-q",
+    is_flag=True,
+    default=False,
+    help="Only output when anomalies are found.",
+)
+def anomaly_monitor(config_dir: str | None, loop_seconds: int, discord_webhook: str | None, quiet: bool) -> None:
+    """Token-free anomaly detection — catches what Netdata misses.
+
+    Compares current metrics against baselines to detect: disk growth
+    rate changes, unexpected reboots, container restart loops, process
+    count spikes, and connection anomalies. Zero API tokens used.
+
+    Examples:
+
+      bastion anomaly-monitor                  # run once
+
+      bastion anomaly-monitor --loop 300       # every 5 minutes
+
+      bastion anomaly-monitor --discord-webhook https://...
+    """
+    config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
+
+    try:
+        _, servers_cfg, permissions_cfg = load_all_config(config_path)
+    except Exception as e:
+        click.echo(f"Config error: {e}", err=True)
+        sys.exit(2)
+
+    from agent.anomaly import run_anomaly_scan
+    from agent.inventory import Inventory
+
+    inventory = Inventory(servers_cfg, permissions_cfg)
+
+    def _run_once() -> int:
+        try:
+            report = asyncio.run(run_anomaly_scan(inventory))
+        except KeyboardInterrupt:
+            sys.exit(130)
+
+        if report.has_issues or not quiet:
+            click.echo(report.format())
+
+        # Send alerts if configured
+        webhook = discord_webhook or os.environ.get("DISCORD_WEBHOOK_URL", "")
+        slack = os.environ.get("SLACK_WEBHOOK_URL", "")
+        email = os.environ.get("ALERT_EMAIL_TO", "")
+
+        if report.has_issues and (webhook or slack or email):
+            from agent.alerts import send_all_alerts
+            send_all_alerts(
+                report.format(), 1 if report.has_issues else 0,
+                discord_url=webhook, slack_url=slack, email_to=email,
+            )
+
+        return 1 if report.has_issues else 0
+
+    if loop_seconds > 0:
+        import time
+        click.echo(f"Anomaly monitor running every {loop_seconds}s. Ctrl-C to stop.")
+        try:
+            while True:
+                _run_once()
+                time.sleep(loop_seconds)
+        except KeyboardInterrupt:
+            click.echo("\nStopped.")
+    else:
+        sys.exit(_run_once())
+
+
+@cli.command(name="add-server")
+@click.option(
+    "--config-dir",
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    default=None,
+    help="Path to configuration directory.",
+)
+def add_server(config_dir: str | None) -> None:
+    """Interactively add a new server to the inventory.
+
+    Walks you through name, host, role, SSH key, and services.
+    Tests the SSH connection before saving. No more editing YAML by hand.
+
+    Examples:
+
+      bastion add-server
+
+      bastion add-server --config-dir /etc/bastion/config
+    """
+    config_path = config_dir or os.environ.get("BASTION_AGENT_CONFIG", "./config")
+    servers_file = os.path.join(config_path, "servers.yaml")
+
+    import yaml
+
+    # Load existing servers
+    try:
+        with open(servers_file) as f:
+            servers_data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        servers_data = {}
+
+    existing = servers_data.get("servers", {})
+    if existing:
+        click.echo(f"Existing servers: {', '.join(existing.keys())}")
+    click.echo()
+
+    # Gather info
+    name = click.prompt("Server name (e.g. 'gameserver-02')")
+    if name in existing:
+        if not click.confirm(f"Server '{name}' already exists. Overwrite?"):
+            click.echo("Cancelled.")
+            return
+
+    host = click.prompt("Host (IP or hostname)")
+    role = click.prompt(
+        "Role",
+        type=click.Choice(["bastion", "game-server", "webhost", "monitoring", "saltbox"], case_sensitive=False),
+    )
+    user = click.prompt("SSH user", default="claude-agent")
+    description = click.prompt("Description", default="")
+
+    # SSH setup
+    is_local = click.confirm("Is this a local server (no SSH needed)?", default=False)
+
+    key_path = ""
+    if not is_local:
+        default_key = os.path.expanduser(f"~/.ssh/keys/{name}_ed25519")
+        key_path = click.prompt("SSH key path", default=default_key)
+
+        # Offer to generate SSH key
+        if not os.path.exists(key_path):
+            if click.confirm(f"Key not found at {key_path}. Generate a new keypair?"):
+                key_dir = os.path.dirname(key_path)
+                os.makedirs(key_dir, exist_ok=True)
+                import subprocess
+                result = subprocess.run(
+                    ["ssh-keygen", "-t", "ed25519", "-f", key_path, "-N", "", "-C", f"bastion-agent-{name}"],
+                    capture_output=True, text=True,
+                )
+                if result.returncode == 0:
+                    click.echo(f"✓ Key generated: {key_path}")
+                    click.echo(f"\nPublic key (add to {user}@{host}:~/.ssh/authorized_keys):")
+                    click.echo()
+                    with open(f"{key_path}.pub") as f:
+                        click.echo(f"  {f.read().strip()}")
+                    click.echo()
+                else:
+                    click.echo(f"✗ Key generation failed: {result.stderr}", err=True)
+
+    # Services
+    services_str = click.prompt(
+        "Services (comma-separated, e.g. 'docker,pterodactyl-wings')",
+        default="",
+    )
+    services = [s.strip() for s in services_str.split(",") if s.strip()]
+
+    # Metrics URL (for monitoring servers)
+    metrics_url = ""
+    if role == "monitoring":
+        metrics_url = click.prompt("Metrics URL (VictoriaMetrics/Prometheus)", default="")
+
+    # Build server entry
+    server_entry: dict[str, Any] = {
+        "host": host,
+        "role": role,
+        "user": user,
+        "description": description,
+        "ssh": not is_local,
+    }
+    if key_path:
+        server_entry["key_path"] = key_path
+    if services:
+        server_entry["services"] = services
+    if metrics_url:
+        server_entry["metrics_url"] = metrics_url
+
+    # Test SSH connection
+    if not is_local and os.path.exists(key_path):
+        if click.confirm("Test SSH connection now?", default=True):
+            click.echo(f"Connecting to {user}@{host}...")
+            import subprocess
+            result = subprocess.run(
+                [
+                    "ssh", "-i", key_path,
+                    "-o", "ConnectTimeout=10",
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    f"{user}@{host}", "echo 'connection_ok'"
+                ],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 and "connection_ok" in result.stdout:
+                click.echo("✓ SSH connection successful")
+            else:
+                click.echo(f"✗ SSH connection failed: {result.stderr.strip()}", err=True)
+                if not click.confirm("Save anyway?"):
+                    click.echo("Cancelled.")
+                    return
+
+    # Save
+    if "servers" not in servers_data:
+        servers_data["servers"] = {}
+    servers_data["servers"][name] = server_entry
+
+    with open(servers_file, "w") as f:
+        yaml.dump(servers_data, f, default_flow_style=False, sort_keys=False)
+
+    click.echo(f"\n✓ Server '{name}' added to {servers_file}")
+    click.echo(f"  Role: {role} | Host: {host} | SSH: {not is_local}")
+    if services:
+        click.echo(f"  Services: {', '.join(services)}")
 
 
 @cli.command()

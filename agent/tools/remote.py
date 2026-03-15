@@ -159,11 +159,7 @@ class RunRemoteCommand(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Execute a command on a downstream server via SSH. The server must "
-            "exist in the inventory and the command must be on that server's "
-            "role allowlist. Destructive commands require operator approval."
-        )
+        return "Run a command on a remote server via SSH. Must match role allowlist."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -171,11 +167,11 @@ class RunRemoteCommand(BaseTool):
             "properties": {
                 "server": {
                     "type": "string",
-                    "description": "Server name from the inventory (e.g. 'gameserver-01', 'monitoring').",
+                    "description": "Server name (e.g. 'gameserver-01').",
                 },
                 "command": {
                     "type": "string",
-                    "description": "The command to execute on the remote server.",
+                    "description": "Command to execute.",
                 },
             },
             "required": ["server", "command"],

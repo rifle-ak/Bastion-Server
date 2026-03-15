@@ -25,10 +25,7 @@ class DockerPs(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "List running Docker containers on a server. Set 'all' to true "
-            "to include stopped containers."
-        )
+        return "List Docker containers on a server. Set all=true for stopped too."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -68,10 +65,7 @@ class DockerLogs(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Fetch logs from a Docker container on a server. "
-            "Optionally limit by number of lines or time range."
-        )
+        return "Fetch Docker container logs. Limit by lines or time range."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -117,8 +111,39 @@ class DockerLogs(BaseTool):
         return await _run_on_server(self._inventory, server, cmd)
 
 
+_ssh_pool: Any = None
+
+
+def get_ssh_pool() -> Any:
+    """Get or create the global SSH connection pool.
+
+    Returns None if asyncssh is not available.
+    """
+    global _ssh_pool
+    if _ssh_pool is not None:
+        return _ssh_pool
+    try:
+        from agent.tools.ssh_pool import SSHPool
+        _ssh_pool = SSHPool()
+        return _ssh_pool
+    except Exception:
+        return None
+
+
+async def close_ssh_pool() -> None:
+    """Close the global SSH pool. Call at session end."""
+    global _ssh_pool
+    if _ssh_pool is not None:
+        await _ssh_pool.close_all()
+        _ssh_pool = None
+
+
 async def _run_on_server(inventory: Inventory, server: str, command: str) -> ToolResult:
-    """Run a command locally or remotely depending on the server."""
+    """Run a command locally or remotely depending on the server.
+
+    Uses the SSH connection pool for remote servers when available,
+    avoiding a fresh SSH handshake for every command.
+    """
     try:
         server_info = inventory.get_server(server)
     except KeyError as e:
@@ -126,6 +151,11 @@ async def _run_on_server(inventory: Inventory, server: str, command: str) -> Too
 
     if server == "localhost" or not server_info.definition.ssh:
         return await _run_local(command)
+
+    # Try pooled connection first
+    pool = get_ssh_pool()
+    if pool is not None:
+        return await pool.run(server_info, command)
 
     from agent.tools.remote import run_remote_command
     return await run_remote_command(server_info, command)

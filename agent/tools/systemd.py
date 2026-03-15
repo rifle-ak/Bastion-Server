@@ -26,7 +26,7 @@ class ServiceStatus(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Check the status of a systemd service on a server."
+        return "Check systemd service status on a server."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -62,10 +62,7 @@ class ServiceJournal(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Read the systemd journal (logs) for a service on a server. "
-            "Optionally limit by number of lines or time range."
-        )
+        return "Read systemd journal for a service. Limit by lines or time range."
 
     @property
     def parameters(self) -> dict[str, Any]:
