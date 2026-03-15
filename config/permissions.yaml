@@ -463,6 +463,8 @@ roles:
       - "tail -n * /var/lib/mysql/*"
       - "tail -n * /var/log/mariadb/*"
       - "head -n * *"
+      - "head -* *"
+      - "tail -* *"
       - "ls *"
       - "ls"
       - "du -sh *"
