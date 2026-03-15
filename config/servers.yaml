@@ -43,11 +43,11 @@ servers:
       - exim
 
   webhost-02:
-    host: winnersonlylotto.com
+    host: 129.121.78.13
     role: webhost
-    user: claude-agent
+    user: root
     key_path: ~/.ssh/keys/webhost-02_ed25519
-    description: "Winners Only Lotto — cPanel webhost"
+    description: "WinnersOnlyLotto.com"
     services:
       - cpanel
       - httpd
