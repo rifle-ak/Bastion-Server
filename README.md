@@ -465,8 +465,8 @@ Patterns that trigger approval: `restart`, `stop`, `kill`, `rm`, `remove`, `dele
 Every tool call is logged to `/var/log/bastion-agent/audit.jsonl` as structured JSON **before execution**:
 
 ```json
-{"timestamp":"2025-01-15T14:32:01Z","event":"tool_attempt","tool":"run_remote_command","input":{"server":"gameserver-01","command":"docker ps"},"user":"operator"}
-{"timestamp":"2025-01-15T14:32:02Z","event":"tool_success","tool":"run_remote_command","exit_code":0}
+{"timestamp":"2026-03-15T14:32:01Z","event":"tool_attempt","tool":"run_remote_command","input":{"server":"gameserver-01","command":"docker ps"},"user":"operator"}
+{"timestamp":"2026-03-15T14:32:02Z","event":"tool_success","tool":"run_remote_command","exit_code":0}
 ```
 
 ### Per-Host SSH Keys
@@ -492,21 +492,7 @@ approval_mode: interactive            # "interactive" or "auto_deny"
 
 ### `servers.yaml` — Server Inventory
 
-```yaml
-servers:
-  <name>:
-    host: <ip-or-hostname>            # required
-    role: <role-name>                 # required — maps to permissions.yaml
-    user: claude-agent                # SSH username (default: claude-agent)
-    description: "Human description"  # shown to Claude in system prompt
-    ssh: true                         # false for localhost only
-    key_path: ~/.ssh/keys/<name>_ed25519
-    services:                         # optional — listed in system prompt
-      - docker
-      - nginx
-    metrics_url: http://host:8428     # optional — for query_metrics tool
-    known_hosts_path: null            # optional — SSH known_hosts file
-```
+See [Edit the Server Inventory](#2-edit-the-server-inventory) above for the full field reference, available roles, and examples for all server types.
 
 ### `permissions.yaml` — Access Control
 
@@ -532,35 +518,42 @@ approval_required_patterns:           # substrings that trigger approval
 ## Architecture
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│                      BASTION SERVER                           │
-│                                                               │
-│  User ──► CLI (Rich) ──► Conversation Manager                │
-│                               │                               │
-│                          Anthropic API                        │
-│                          (tool use)                           │
-│                               │                               │
-│                         Tool Router                           │
-│                        /     |     \                          │
-│                   Security  Tools  Audit Log                  │
-│                   ┌──────┐  │      (JSON)                    │
-│                   │Allow-│  ├─ local commands                 │
-│                   │list  │  ├─ remote commands (SSH)          │
-│                   │      │  ├─ docker ps/logs                 │
-│                   │Sanit-│  ├─ systemd status/journal         │
-│                   │izer  │  ├─ file reads                     │
-│                   │      │  ├─ metrics queries                │
-│                   │Appro-│  └─ server inventory               │
-│                   │val   │                                    │
-│                   └──────┘                                    │
-│                               │                               │
-│                          SSH (per-host keys)                  │
-│                        /      |        \                      │
-│                   ┌────┐  ┌───────┐  ┌──────────┐           │
-│                   │Game│  │Monitor│  │Other     │           │
-│                   │Srvs│  │Stack  │  │Downstream│           │
-│                   └────┘  └───────┘  └──────────┘           │
-└───────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        BASTION SERVER                             │
+│                                                                   │
+│  User ──► CLI (Rich) ──► Conversation Manager                    │
+│                               │                                   │
+│                          Anthropic API                            │
+│                          (tool use)                               │
+│                               │                                   │
+│                         Tool Router (76 tools)                    │
+│                        /     |     \                              │
+│                   Security  Tools  Audit Log                      │
+│                   ┌──────┐  │      (JSON)                        │
+│                   │Allow-│  ├─ Core: local/remote commands        │
+│                   │list  │  ├─ Docker & Systemd                   │
+│                   │      │  ├─ cPanel/WHM (12 tools)              │
+│                   │Sanit-│  ├─ WordPress/WP-CLI (12 tools)        │
+│                   │izer  │  ├─ Web/SSL/DNS (6 tools)              │
+│                   │      │  ├─ MySQL/MariaDB (7 tools)            │
+│                   │Appro-│  ├─ Pterodactyl Panel API (6 tools)    │
+│                   │val   │  ├─ Deep diagnostics (7 tools)         │
+│                   │      │  ├─ Incident response (8 tools)        │
+│                   │Consol│  ├─ Config & compliance (5 tools)      │
+│                   │e     │  └─ Monitoring & metrics                │
+│                   │Allow-│                                        │
+│                   │list  │                                        │
+│                   └──────┘                                        │
+│                               │                                   │
+│                    SSH (per-host keys, connection pool)            │
+│                  /        |         |         \                    │
+│            ┌────────┐ ┌───────┐ ┌───────┐ ┌────────┐            │
+│            │Game    │ │Web    │ │Monitor│ │Other   │            │
+│            │Servers │ │Hosts  │ │Stack  │ │Downstr.│            │
+│            │(Ptero) │ │(cPanel│ │(VM/   │ │(Saltbox│            │
+│            │        │ │ WP)   │ │Grafana│ │ etc.)  │            │
+│            └────────┘ └───────┘ └───────┘ └────────┘            │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -758,7 +751,7 @@ If you can SSH but not git pull:
 ```bash
 # From your local machine with the updated repo:
 rsync -avz --exclude='.git' --exclude='config/' --exclude='logs/' --exclude='__pycache__' \
-  ./agent/ ./tests/ ./pyproject.toml ./requirements.txt \
+  ./agent ./tests ./pyproject.toml ./requirements.txt \
   root@bastion-ip:/opt/bastion-agent/
 
 # Then on the bastion:
