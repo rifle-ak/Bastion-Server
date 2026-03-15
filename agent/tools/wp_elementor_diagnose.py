@@ -433,8 +433,21 @@ def _build_elementor_report(
                 "5. **Resolve plugin conflicts** — deactivate conflicting "
                 "plugins one at a time and test. See the conflict list above."
             )
+        if any("SMART QUOTES" in f or "TEMPLATE LITERAL" in f or
+               "CONTROL CHAR" in f or "LINE BREAK INSIDE" in f or
+               "NON-ASCII" in f or "UNBALANCED BRACES" in f
+               for f in findings):
+            sections.append(
+                "6. **Fix JavaScript syntax errors** — open the HTML widget "
+                "in Elementor, find the <script> block, and fix the bad "
+                "characters. Search for smart quotes (\u201c \u201d \u2018 \u2019), unclosed "
+                "backticks (`), line breaks inside strings, and invisible "
+                "control characters. Re-type affected lines instead of "
+                "copy-pasting. The browser console's first red error "
+                "points to the exact line."
+            )
         sections.append(
-            "6. **General: clear all caches** (page cache, CDN, browser) "
+            "7. **General: clear all caches** (page cache, CDN, browser) "
             "after any fix."
         )
     else:
@@ -604,6 +617,16 @@ def _check_widget_html(html: str) -> list[str]:
             "PHP execution plugin or shortcode instead."
         )
 
+    # Check JavaScript inside <script> blocks for syntax corruption
+    script_blocks = re.findall(
+        r'<script[^>]*>(.*?)</script>', html, re.DOTALL | re.IGNORECASE,
+    )
+    for script in script_blocks:
+        if script.strip():
+            js_issues = _check_js_syntax(script)
+            if js_issues:
+                issues.extend(js_issues)
+
     return issues
 
 
@@ -625,6 +648,154 @@ def _check_shortcode(shortcode: str) -> list[str]:
             "✗ MALFORMED SHORTCODE: unbalanced brackets. "
             f"Opens: {shortcode.count('[')}, Closes: {shortcode.count(']')}. "
             "This shortcode will fail to render."
+        )
+
+    return issues
+
+
+# ── Smart/curly quote codepoints that break JavaScript ──
+_SMART_QUOTES: dict[str, str] = {
+    "\u2018": "left single curly quote (\u2018)",
+    "\u2019": "right single curly quote / smart apostrophe (\u2019)",
+    "\u201c": "left double curly quote (\u201c)",
+    "\u201d": "right double curly quote (\u201d)",
+    "\u00ab": "left guillemet (\u00ab)",
+    "\u00bb": "right guillemet (\u00bb)",
+    "\u2032": "prime (\u2032)",
+    "\u2033": "double prime (\u2033)",
+}
+
+# Non-ASCII characters that silently break JS when pasted from
+# Word, email clients, note apps, or marketing copy
+_BAD_JS_CHARS: dict[str, str] = {
+    "\u2013": "en dash (\u2013)",
+    "\u2014": "em dash (\u2014)",
+    "\u2022": "bullet (\u2022)",
+    "\u00a0": "non-breaking space (\\xa0)",
+    "\u200b": "zero-width space (\\u200b)",
+    "\u200c": "zero-width non-joiner (\\u200c)",
+    "\u200d": "zero-width joiner (\\u200d)",
+    "\ufeff": "BOM / zero-width no-break space (\\ufeff)",
+    "\u00ad": "soft hyphen (\\xad)",
+    "\u2026": "ellipsis (\u2026)",
+}
+
+
+def _check_js_syntax(js: str) -> list[str]:
+    """Check JavaScript code for syntax corruption common in Elementor widgets.
+
+    Detects smart/curly quotes, unclosed template literals, control
+    characters, unescaped apostrophes in strings, and other issues that
+    cause 'Uncaught SyntaxError: Invalid or unexpected token'.
+    """
+    issues: list[str] = []
+
+    # ── Smart / curly quotes inside JS ──
+    found_quotes: list[str] = []
+    for char, desc in _SMART_QUOTES.items():
+        if char in js:
+            found_quotes.append(desc)
+    if found_quotes:
+        issues.append(
+            f"✗ SMART QUOTES IN JAVASCRIPT: Found {', '.join(found_quotes[:3])}. "
+            f"These are not valid JS string delimiters and cause "
+            f"'Uncaught SyntaxError: Invalid or unexpected token'. "
+            f"Replace all curly/smart quotes with straight quotes "
+            f"(' or \"). Usually caused by pasting from Word, email, "
+            f"or macOS auto-correct."
+        )
+
+    # ── Non-ASCII characters that break JS ──
+    # Only flag inside JS string contexts or identifiers — not in
+    # comments or HTML template literals where they may be intentional.
+    # For safety, we flag any occurrence since these are almost never
+    # intentional in JS code pasted into an Elementor HTML widget.
+    found_bad: list[str] = []
+    for char, desc in _BAD_JS_CHARS.items():
+        if char in js:
+            found_bad.append(desc)
+    if found_bad:
+        issues.append(
+            f"⚠ NON-ASCII CHARACTERS in JavaScript: Found {', '.join(found_bad[:3])}. "
+            f"These invisible/special characters can cause JS syntax errors "
+            f"depending on context. Common when code is copied from Word, "
+            f"email clients, or note-taking apps. Retype the affected lines "
+            f"or paste as plain text."
+        )
+
+    # ── Unclosed template literals (backticks) ──
+    # Count backticks outside of strings. A simple heuristic: odd number
+    # of unescaped backticks means one is unclosed.
+    # Remove escaped backticks first
+    cleaned = js.replace("\\`", "")
+    backtick_count = cleaned.count("`")
+    if backtick_count % 2 != 0:
+        issues.append(
+            "✗ UNCLOSED TEMPLATE LITERAL: Odd number of backticks (`) "
+            f"found ({backtick_count}). A template literal was opened but "
+            "never closed. This causes 'Uncaught SyntaxError: Invalid or "
+            "unexpected token' and breaks all JS that follows."
+        )
+
+    # ── Unbalanced braces ──
+    brace_open = js.count("{")
+    brace_close = js.count("}")
+    if brace_open != brace_close:
+        diff = abs(brace_open - brace_close)
+        which = "opening" if brace_open > brace_close else "closing"
+        issues.append(
+            f"✗ UNBALANCED BRACES in JavaScript: {diff} extra {which} "
+            f"brace(s) ({brace_open} open, {brace_close} close). "
+            f"This causes a SyntaxError."
+        )
+
+    # ── Unbalanced parentheses ──
+    paren_open = js.count("(")
+    paren_close = js.count(")")
+    if paren_open != paren_close:
+        diff = abs(paren_open - paren_close)
+        which = "opening" if paren_open > paren_close else "closing"
+        issues.append(
+            f"⚠ UNBALANCED PARENTHESES in JavaScript: {diff} extra {which} "
+            f"({paren_open} open, {paren_close} close)."
+        )
+
+    # ── Line breaks inside regular strings ──
+    # Match strings opened with ' or " that contain a raw newline before
+    # the closing quote. Template literals (backticks) are fine.
+    broken_strings = re.findall(
+        r"""(?:^|[=,(\s])(['"])(?:(?!\1)[^\\\n]|\\.)*\n""",
+        js, re.MULTILINE,
+    )
+    if broken_strings:
+        issues.append(
+            f"✗ LINE BREAK INSIDE QUOTED STRING: {len(broken_strings)} "
+            f"occurrence(s) found. JavaScript does not allow literal newlines "
+            f"inside single- or double-quoted strings. Use template literals "
+            f"(backticks) or string concatenation instead."
+        )
+
+    # ── Control characters (null bytes, tabs in strings, etc.) ──
+    # Check for characters 0x00-0x08, 0x0E-0x1F (excluding \t \n \r)
+    control_chars = re.findall(r'[\x00-\x08\x0e-\x1f]', js)
+    if control_chars:
+        issues.append(
+            f"✗ CONTROL CHARACTERS in JavaScript: {len(control_chars)} "
+            f"invisible control character(s) detected. These cause "
+            f"'Invalid or unexpected token' errors. Usually introduced "
+            f"by copy-pasting from a PDF, screenshot OCR, or rich text editor."
+        )
+
+    # ── Stray backslashes ──
+    # Look for backslashes not followed by a valid escape character
+    stray_backslash = re.findall(
+        r'\\(?![nrtbfv0\\\'"`/xu{}$])', js,
+    )
+    if len(stray_backslash) > 2:
+        issues.append(
+            f"⚠ {len(stray_backslash)} possibly stray backslash(es) in "
+            f"JavaScript. Invalid escape sequences can cause syntax errors "
+            f"in strict mode."
         )
 
     return issues
@@ -775,20 +946,22 @@ def _analyze_elementor_page(html: str) -> list[str]:
             f"The referenced template may be deleted or Elementor failed to process it."
         )
 
-    # Check for JavaScript errors in inline scripts
+    # Check inline scripts for JS syntax corruption
     inline_scripts = re.findall(
         r'<script[^>]*>(.*?)</script>', html, re.DOTALL | re.IGNORECASE,
     )
+    js_issues_reported = False
     for script in inline_scripts:
-        if "elementor" in script.lower():
-            # Check for syntax issues
-            if script.count("{") != script.count("}"):
-                issues.append(
-                    "✗ MALFORMED INLINE JS: Unbalanced braces in an Elementor "
-                    "script block. This will cause JS errors that break "
-                    "frontend widget functionality."
-                )
-                break
+        if not script.strip():
+            continue
+        # Check all inline scripts for syntax corruption — the break
+        # doesn't have to be in an Elementor-tagged script; any syntax
+        # error in any script on the page can stop later scripts from
+        # running, including Elementor's.
+        js_issues = _check_js_syntax(script)
+        if js_issues and not js_issues_reported:
+            issues.extend(js_issues)
+            js_issues_reported = True  # avoid flooding with duplicates
 
     # Check for duplicate jQuery
     jquery_loads = len(re.findall(r'jquery(?:\.min)?\.js', html, re.IGNORECASE))

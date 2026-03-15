@@ -10,6 +10,7 @@ from agent.tools.wp_elementor_diagnose import (
     _analyze_elementor_page,
     _build_elementor_report,
     _check_elementor_data,
+    _check_js_syntax,
     _check_plugin_conflicts,
     _check_shortcode,
     _check_widget_html,
@@ -98,6 +99,153 @@ class TestCheckShortcode:
         sc = '[outer][inner][deeper][deepest]content[/deepest][/deeper][/inner][/outer]'
         issues = _check_shortcode(sc)
         assert any("nested shortcodes" in i.lower() for i in issues)
+
+
+# ── JS syntax corruption ──
+
+
+class TestCheckJsSyntax:
+    def test_clean_js(self):
+        js = 'var x = "hello"; console.log(x);'
+        assert _check_js_syntax(js) == []
+
+    def test_smart_double_quotes(self):
+        js = 'var x = \u201chello\u201d;'
+        issues = _check_js_syntax(js)
+        assert any("SMART QUOTES" in i for i in issues)
+
+    def test_smart_single_quotes(self):
+        js = "var x = \u2018hello\u2019;"
+        issues = _check_js_syntax(js)
+        assert any("SMART QUOTES" in i for i in issues)
+
+    def test_smart_apostrophe(self):
+        # The #1 offender: Winner\u2019s Only
+        js = "var x = 'Winner\u2019s Only';"
+        issues = _check_js_syntax(js)
+        assert any("SMART QUOTES" in i for i in issues)
+
+    def test_en_dash(self):
+        js = 'var range = "10\u201320";'
+        issues = _check_js_syntax(js)
+        assert any("NON-ASCII" in i for i in issues)
+
+    def test_em_dash(self):
+        js = 'var msg = "hello\u2014world";'
+        issues = _check_js_syntax(js)
+        assert any("NON-ASCII" in i for i in issues)
+
+    def test_bullet_character(self):
+        js = 'var items = "\u2022 item one";'
+        issues = _check_js_syntax(js)
+        assert any("NON-ASCII" in i for i in issues)
+
+    def test_nbsp(self):
+        js = 'var\xa0x = 1;'
+        issues = _check_js_syntax(js)
+        assert any("NON-ASCII" in i for i in issues)
+
+    def test_zero_width_space(self):
+        js = 'var x\u200b = 1;'
+        issues = _check_js_syntax(js)
+        assert any("NON-ASCII" in i for i in issues)
+
+    def test_bom(self):
+        js = '\ufeffvar x = 1;'
+        issues = _check_js_syntax(js)
+        assert any("NON-ASCII" in i for i in issues)
+
+    def test_unclosed_template_literal(self):
+        js = 'var html = `<div>hello;'
+        issues = _check_js_syntax(js)
+        assert any("UNCLOSED TEMPLATE LITERAL" in i for i in issues)
+
+    def test_closed_template_literal_ok(self):
+        js = 'var html = `<div>hello</div>`;'
+        issues = _check_js_syntax(js)
+        assert not any("UNCLOSED TEMPLATE LITERAL" in i for i in issues)
+
+    def test_escaped_backtick_not_counted(self):
+        js = 'var html = `hello \\` world`;'
+        issues = _check_js_syntax(js)
+        # 3 backticks total, but one is escaped -> 2 unescaped -> even -> OK
+        assert not any("UNCLOSED TEMPLATE LITERAL" in i for i in issues)
+
+    def test_unbalanced_braces(self):
+        js = 'function foo() { if (true) { return 1; }'
+        issues = _check_js_syntax(js)
+        assert any("UNBALANCED BRACES" in i for i in issues)
+
+    def test_balanced_braces_ok(self):
+        js = 'function foo() { if (true) { return 1; } }'
+        issues = _check_js_syntax(js)
+        assert not any("UNBALANCED BRACES" in i for i in issues)
+
+    def test_unbalanced_parens(self):
+        js = 'console.log("hello"'
+        issues = _check_js_syntax(js)
+        assert any("UNBALANCED PARENTHESES" in i for i in issues)
+
+    def test_line_break_in_string(self):
+        js = "var x = 'hello\nworld';"
+        issues = _check_js_syntax(js)
+        assert any("LINE BREAK" in i for i in issues)
+
+    def test_line_break_in_template_literal_ok(self):
+        # Template literals allow line breaks
+        js = "var x = `hello\nworld`;"
+        issues = _check_js_syntax(js)
+        assert not any("LINE BREAK" in i for i in issues)
+
+    def test_control_characters(self):
+        js = 'var x = "hello\x01world";'
+        issues = _check_js_syntax(js)
+        assert any("CONTROL CHAR" in i for i in issues)
+
+    def test_null_byte(self):
+        js = 'var x = "hello\x00world";'
+        issues = _check_js_syntax(js)
+        assert any("CONTROL CHAR" in i for i in issues)
+
+    def test_multiple_issues(self):
+        # Smart quotes + unclosed template literal + control char
+        js = 'var x = \u201chello\u201d; var y = `unclosed; var z = "ab\x02cd";'
+        issues = _check_js_syntax(js)
+        assert len(issues) >= 3
+
+    def test_real_world_elementor_widget_js(self):
+        """Simulate the exact scenario from the user's report:
+        JS pasted into Elementor HTML widget with a smart apostrophe."""
+        js = """
+        document.getElementById('generate-btn').addEventListener('click', function() {
+            var name = document.getElementById('player-name').value;
+            var msg = 'Winner\u2019s choice selected';
+            el.innerHTML = `<div class="result">${name}</div>`;
+        });
+        """
+        issues = _check_js_syntax(js)
+        assert any("SMART QUOTES" in i for i in issues)
+
+
+# ── Widget HTML with JS checks ──
+
+
+class TestCheckWidgetHtmlWithJs:
+    def test_script_with_smart_quotes(self):
+        html = '<script>var x = \u201chello\u201d;</script>'
+        issues = _check_widget_html(html)
+        assert any("SMART QUOTES" in i for i in issues)
+
+    def test_script_with_unclosed_backtick(self):
+        html = '<script>var html = `<div>hello;</script>'
+        issues = _check_widget_html(html)
+        assert any("UNCLOSED TEMPLATE LITERAL" in i for i in issues)
+
+    def test_no_script_no_js_check(self):
+        html = '<div>Just regular HTML with \u201csmart quotes\u201d</div>'
+        issues = _check_widget_html(html)
+        # Smart quotes in HTML (not in script) should NOT trigger JS check
+        assert not any("SMART QUOTES" in i for i in issues)
 
 
 # ── Plugin conflicts ──
@@ -379,3 +527,37 @@ class TestBuildElementorReport:
         assert "Recommended Actions" in report
         assert "Update Elementor" in report
         assert "CSS print method" in report
+
+    def test_js_syntax_error_in_page(self):
+        """Smart quotes in inline script should be detected in rendered page."""
+        data = self._make_data(
+            page_html=ToolResult(
+                output=(
+                    '<div class="elementor-section">'
+                    '<script>var x = \u201chello\u201d;</script>'
+                    '<script src="elementor-frontend.js"></script>'
+                    '</div>'
+                ),
+            ),
+        )
+        report = _build_elementor_report("example.com", "https://example.com/", "/p", data)
+        assert "SMART QUOTES" in report
+        assert "Fix JavaScript syntax" in report
+
+    def test_js_syntax_in_elementor_data(self):
+        """Smart quotes in Elementor widget data should be caught."""
+        widget_data = json.dumps([
+            {
+                "elType": "widget",
+                "widgetType": "html",
+                "settings": {
+                    "html": "<script>var msg = \u2018Winner\u2019s choice\u2019;</script>",
+                },
+                "elements": [],
+            }
+        ])
+        data = self._make_data(
+            page_elementor_data=ToolResult(output=widget_data),
+        )
+        report = _build_elementor_report("example.com", "https://example.com/", "/p", data)
+        assert "SMART QUOTES" in report
