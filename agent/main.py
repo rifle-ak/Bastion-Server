@@ -266,6 +266,10 @@ def _build_core(config_path: str):
     # Game server mod/plugin conflict detection
     registry.register(ModConflictCheck(inventory))
 
+    # Self-update
+    from agent.tools.self_update import SelfUpdate
+    registry.register(SelfUpdate())
+
     # Register SSH tools if asyncssh is available
     if _asyncssh_available():
         from agent.tools.remote import RunRemoteCommand
