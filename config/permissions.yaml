@@ -412,22 +412,26 @@ roles:
       - "exim -bpr *"
       # ── SSL ──
       - "echo | openssl *"
+      # ── PHP version / module checks ──
+      - "php -v"
+      - "php -m"
+      - "php -i"
+      - "php -r *"
       # ── WordPress WP-CLI ──
       - "runuser -u * -- wp *"
-      - "find /home/*/public_html -maxdepth * -name * -type *"
-      # ── WordPress security scanning ──
-      - "find /home/*/public_html/wp-content/uploads *"
-      - "find /home/*/public_html -type f -perm *"
-      - "find /home/*/public_html/wp-includes *"
-      - "find /home/*/public_html/wp-admin *"
-      - "grep -rlc * /home/*/public_html/wp-content/*"
-      - "find /home/*/public_html/wp-content -name *"
+      # ── File browsing within /home/ ──
+      - "find /home/* *"
+      - "cat /home/*"
+      - "grep * /home/*"
+      - "grep -r * /home/*"
+      - "grep -rn * /home/*"
+      - "grep -rl * /home/*"
+      - "grep -rlc * /home/*"
+      - "grep -c * /home/*"
+      - "wc -l /home/*"
       # ── cPanel account investigation ──
       - "du -sh /home/*/"
       - "du -sh /home/*/*"
-      - "find /home/* -type f -size *"
-      - "find /home/* -type f -printf *"
-      - "find /home/* -type f 2>/dev/null | wc *"
       - "cat /home/*/.cpanel/forwarders"
       - "du -sh /home/*/mail/*"
       - "du -sh /home/*/mail/*/*"
